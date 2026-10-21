@@ -1,0 +1,18 @@
+.env
+.venv/
+session.db
+__pycache__/
+*.log
+
+# Recat
+.env
+session.db
+audit.log.jsonl
+__pycache__/
+.pytest_cache/
+.venv/
+
+data/registry.json
+data/docs/
+tests/repro/mode.json
+tests/repro/*.out

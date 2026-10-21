@@ -1,0 +1,10 @@
+[
+  {"repo": "sample_py",   "entry": "OrderService.create",  "question": "주문 생성은 어떻게 동작해?"},
+  {"repo": "sample_py",   "entry": "OrderService.cancel",  "question": "주문 취소 흐름을 알려줘"},
+  {"repo": "sample_py",   "entry": "PaymentClient.request","question": "결제 요청은 어떻게 처리돼?"},
+  {"repo": "sample_py",   "entry": "StockService.decrease","question": "재고 차감은 어떻게 동작해?"},
+  {"repo": "sample_py",   "entry": "OrderService.run_hook","question": "run_hook은 무엇을 호출해?"},
+  {"repo": "sample_java", "entry": "OrderService.create",  "question": "OrderService.create 호출 흐름"},
+  {"repo": "sample_java", "entry": "CardPaymentGateway.pay","question": "카드 결제는 어떻게 동작해?"},
+  {"repo": "sample_java", "entry": "StockService.decrease","question": "재고 차감 흐름을 설명해줘"}
+]

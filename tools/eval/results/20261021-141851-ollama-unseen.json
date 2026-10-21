@@ -1,0 +1,339 @@
+{
+  "backend": "ollama",
+  "when": "2026-10-21 14:18:51",
+  "models": {
+    "fast": "qwen3:0.6b",
+    "quality": "qwen3:8b"
+  },
+  "question_set": "questions_unseen.json",
+  "questions": 8,
+  "classification_rate": 0.75,
+  "entry_hit_rate": 0.5,
+  "entry_hit_rate_traced": 0.667,
+  "top3_hit_rate": 0.625,
+  "clarify_rate": 0.25,
+  "fallback_rate": 0.25,
+  "avg_attempts": 1.0,
+  "summary": {
+    "A": {
+      "n": 8,
+      "claims": 40,
+      "verified": 0,
+      "hallucinated": 40,
+      "wrong": 0,
+      "unverifiable": 0,
+      "error_rate": 1.0,
+      "questions_with_error": 8
+    },
+    "B": {
+      "n": 4,
+      "claims": 13,
+      "verified": 11,
+      "hallucinated": 2,
+      "wrong": 0,
+      "unverifiable": 0,
+      "error_rate": 0.154,
+      "questions_with_error": 2
+    },
+    "C": {
+      "n": 2,
+      "claims": 11,
+      "verified": 11,
+      "hallucinated": 0,
+      "wrong": 0,
+      "unverifiable": 0,
+      "error_rate": 0.0,
+      "questions_with_error": 0
+    }
+  },
+  "rows": [
+    {
+      "repo": "recat_snapshot",
+      "entry": "_install_zip",
+      "question": "관리자가 zip 파일로 저장소를 올리면 서버에서 어떤 처리를 거쳐?",
+      "truth_pairs": 12,
+      "A": {
+        "claims": 5,
+        "verified": 0,
+        "hallucinated": 5,
+        "wrong": 0,
+        "unverifiable": 0,
+        "sec": 25.2
+      },
+      "entry_hit": false,
+      "entry_chosen": null,
+      "route": "doc",
+      "mode": "doc",
+      "top3_candidates": [],
+      "top3_hit": false,
+      "clarify": false,
+      "B": null,
+      "C": null,
+      "C_meta": {
+        "attempts": 0,
+        "fallback": false,
+        "note": "설명 단계에 도달하지 못함"
+      }
+    },
+    {
+      "repo": "recat_snapshot",
+      "entry": "fallback_node",
+      "question": "LLM 설명이 검증에 실패하면 시스템이 어떻게 응답해?",
+      "truth_pairs": 1,
+      "A": {
+        "claims": 5,
+        "verified": 0,
+        "hallucinated": 5,
+        "wrong": 0,
+        "unverifiable": 0,
+        "sec": 22.4
+      },
+      "entry_hit": false,
+      "entry_chosen": null,
+      "route": "trace",
+      "mode": "clarify",
+      "top3_candidates": [
+        "_conversational",
+        "fallback_node",
+        "_send_feedback"
+      ],
+      "top3_hit": true,
+      "clarify": true,
+      "B": null,
+      "C": null,
+      "C_meta": {
+        "attempts": 0,
+        "fallback": false,
+        "note": "설명 단계에 도달하지 못함"
+      }
+    },
+    {
+      "repo": "recat_snapshot",
+      "entry": "check_section",
+      "question": "문서에 적힌 호출 관계가 실제 코드와 다르면 어떻게 판정돼?",
+      "truth_pairs": 10,
+      "A": {
+        "claims": 5,
+        "verified": 0,
+        "hallucinated": 5,
+        "wrong": 0,
+        "unverifiable": 0,
+        "sec": 22.4
+      },
+      "entry_hit": false,
+      "entry_chosen": null,
+      "route": "doc",
+      "mode": "doc-no-llm",
+      "top3_candidates": [],
+      "top3_hit": false,
+      "clarify": false,
+      "B": null,
+      "C": null,
+      "C_meta": {
+        "attempts": 0,
+        "fallback": false,
+        "note": "설명 단계에 도달하지 못함"
+      }
+    },
+    {
+      "repo": "recat_snapshot",
+      "entry": "require_admin",
+      "question": "사용자 키로 관리자 전용 API를 부르면 어떻게 돼?",
+      "truth_pairs": 0,
+      "A": {
+        "claims": 5,
+        "verified": 0,
+        "hallucinated": 5,
+        "wrong": 0,
+        "unverifiable": 0,
+        "sec": 21.9
+      },
+      "entry_hit": true,
+      "entry_chosen": "require_admin",
+      "route": "trace",
+      "mode": "no-llm-fallback",
+      "top3_candidates": [
+        "require_admin",
+        "_admin_write",
+        "admin_summary"
+      ],
+      "top3_hit": true,
+      "clarify": false,
+      "B": {
+        "claims": 1,
+        "verified": 0,
+        "hallucinated": 1,
+        "wrong": 0,
+        "unverifiable": 0
+      },
+      "C": null,
+      "C_meta": {
+        "attempts": 3,
+        "fallback": true,
+        "tool_calls": 2,
+        "sec": 14.5
+      }
+    },
+    {
+      "repo": "recat_snapshot",
+      "entry": "_add_langgraph_edges",
+      "question": "LangGraph의 add_node/add_edge 선언을 분석기가 어떻게 호출 그래프에 반영해?",
+      "truth_pairs": 2,
+      "A": {
+        "claims": 5,
+        "verified": 0,
+        "hallucinated": 5,
+        "wrong": 0,
+        "unverifiable": 0,
+        "sec": 21.9
+      },
+      "entry_hit": false,
+      "entry_chosen": null,
+      "route": "trace",
+      "mode": "clarify",
+      "top3_candidates": [
+        "CallGraph.overview",
+        "graph_overview",
+        "_node_func"
+      ],
+      "top3_hit": false,
+      "clarify": true,
+      "B": null,
+      "C": null,
+      "C_meta": {
+        "attempts": 0,
+        "fallback": false,
+        "note": "설명 단계에 도달하지 못함"
+      }
+    },
+    {
+      "repo": "recat_snapshot",
+      "entry": "class_scope",
+      "question": "질문이 함수 하나가 아니라 클래스 전체를 가리키면 어떻게 처리해?",
+      "truth_pairs": 0,
+      "A": {
+        "claims": 5,
+        "verified": 0,
+        "hallucinated": 5,
+        "wrong": 0,
+        "unverifiable": 0,
+        "sec": 21.6
+      },
+      "entry_hit": true,
+      "entry_chosen": "class_scope",
+      "route": "trace",
+      "mode": "no-llm-fallback",
+      "top3_candidates": [
+        "class_scope",
+        "file_view",
+        "get_group"
+      ],
+      "top3_hit": true,
+      "clarify": false,
+      "B": {
+        "claims": 1,
+        "verified": 0,
+        "hallucinated": 1,
+        "wrong": 0,
+        "unverifiable": 0
+      },
+      "C": null,
+      "C_meta": {
+        "attempts": 3,
+        "fallback": true,
+        "tool_calls": 2,
+        "sec": 16.1
+      }
+    },
+    {
+      "repo": "recat_snapshot",
+      "entry": "check_doc_section",
+      "question": "check_doc_section 함수는 무엇을 판정해?",
+      "truth_pairs": 47,
+      "A": {
+        "claims": 5,
+        "verified": 0,
+        "hallucinated": 5,
+        "wrong": 0,
+        "unverifiable": 0,
+        "sec": 21.7
+      },
+      "entry_hit": true,
+      "entry_chosen": "check_doc_section",
+      "route": "trace",
+      "mode": "agent",
+      "top3_candidates": [
+        "check_doc_section",
+        "CallGraph.group_of",
+        "OllamaQualityLLM.explain_doc"
+      ],
+      "top3_hit": true,
+      "clarify": false,
+      "B": {
+        "claims": 10,
+        "verified": 10,
+        "hallucinated": 0,
+        "wrong": 0,
+        "unverifiable": 0
+      },
+      "C": {
+        "claims": 10,
+        "verified": 10,
+        "hallucinated": 0,
+        "wrong": 0,
+        "unverifiable": 0
+      },
+      "C_meta": {
+        "attempts": 1,
+        "fallback": false,
+        "tool_calls": 9,
+        "sec": 14.3
+      }
+    },
+    {
+      "repo": "recat_snapshot",
+      "entry": "tracing_decision",
+      "question": "tracing_decision은 어떻게 동작해?",
+      "truth_pairs": 1,
+      "A": {
+        "claims": 5,
+        "verified": 0,
+        "hallucinated": 5,
+        "wrong": 0,
+        "unverifiable": 0,
+        "sec": 22.1
+      },
+      "entry_hit": true,
+      "entry_chosen": "tracing_decision",
+      "route": "trace",
+      "mode": "agent",
+      "top3_candidates": [
+        "tracing_decision",
+        "relate_symbol",
+        "tracing_allowed"
+      ],
+      "top3_hit": true,
+      "clarify": false,
+      "B": {
+        "claims": 1,
+        "verified": 1,
+        "hallucinated": 0,
+        "wrong": 0,
+        "unverifiable": 0
+      },
+      "C": {
+        "claims": 1,
+        "verified": 1,
+        "hallucinated": 0,
+        "wrong": 0,
+        "unverifiable": 0
+      },
+      "C_meta": {
+        "attempts": 1,
+        "fallback": false,
+        "tool_calls": 4,
+        "sec": 7.3
+      }
+    }
+  ]
+}

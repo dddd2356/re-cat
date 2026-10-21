@@ -1,0 +1,10 @@
+[
+  {"repo": "recat_snapshot", "entry": "_install_zip",          "question": "관리자가 zip 파일로 저장소를 올리면 서버에서 어떤 처리를 거쳐?"},
+  {"repo": "recat_snapshot", "entry": "fallback_node",         "question": "LLM 설명이 검증에 실패하면 시스템이 어떻게 응답해?"},
+  {"repo": "recat_snapshot", "entry": "check_section",         "question": "문서에 적힌 호출 관계가 실제 코드와 다르면 어떻게 판정돼?"},
+  {"repo": "recat_snapshot", "entry": "require_admin",         "question": "사용자 키로 관리자 전용 API를 부르면 어떻게 돼?"},
+  {"repo": "recat_snapshot", "entry": "_add_langgraph_edges",  "question": "LangGraph의 add_node/add_edge 선언을 분석기가 어떻게 호출 그래프에 반영해?"},
+  {"repo": "recat_snapshot", "entry": "class_scope",           "question": "질문이 함수 하나가 아니라 클래스 전체를 가리키면 어떻게 처리해?"},
+  {"repo": "recat_snapshot", "entry": "check_doc_section",     "question": "check_doc_section 함수는 무엇을 판정해?"},
+  {"repo": "recat_snapshot", "entry": "tracing_decision",      "question": "tracing_decision은 어떻게 동작해?"}
+]

@@ -1,0 +1,16 @@
+# PostgreSQL + pgvector — 유일한 앱 DB. python -m store.migrate로 스키마 적용.
+# 호출 그래프는 메모리 캐시, 영속 등록·대화·감사·문서 벡터는 DB.
+# 포트는 127.0.0.1에만 바인딩한다.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: recat
+      POSTGRES_PASSWORD: ${RECAT_DB_PASSWORD:-recat-dev-only}
+      POSTGRES_DB: recat
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - recat_pg:/var/lib/postgresql/data
+volumes:
+  recat_pg:

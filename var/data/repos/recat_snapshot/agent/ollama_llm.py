@@ -1,0 +1,98 @@
+"""LLM_BACKEND=ollama — 로컬 Ollama 백엔드 (Base의 ollama_llm 교체, 코드 호출 흐름 도메인).
+
+fast(qwen3:0.6b)는 라우팅·탐색 선택·잡담, quality(qwen3:8b)는 설명과 claims 생성을 맡는다.
+구조화 출력(format=JSON Schema)과 temperature=0을 쓴다. 비용은 로컬이라 0이며 토큰 수만 기록한다.
+주의: 실제 Ollama 모델로는 이 환경에서 실행해 보지 못했고, 요청·응답 처리는 모의 서버로만 확인했다.
+"""
+import asyncio
+import json
+import os
+
+from langsmith import traceable
+
+from .llm_common import (EXPLAIN_SCHEMA, EXPLAIN_SYSTEM, ROUTE_SCHEMA, ROUTE_SYSTEM,
+                         SELECT_SCHEMA, SELECT_SYSTEM, explain_user_prompt,
+                         DOC_SYSTEM, ROUTES, doc_user_prompt, post_json)
+
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434/api/chat")
+
+
+class _Ollama:
+    def __init__(self, model: str, usd_per_1k_tokens: float = 0.0):
+        self.name = model
+        self.usd_per_1k = usd_per_1k_tokens
+
+    def _call(self, system: str, user: str, schema: dict | None) -> tuple[str, dict]:
+        body = {"model": self.name, "stream": False,
+                "options": {"temperature": 0},
+                "messages": [{"role": "system", "content": system},
+                             {"role": "user", "content": user}]}
+        if schema is not None:
+            body["format"] = schema
+        # qwen3 계열은 기본으로 '생각(thinking)' 토큰을 길게 낸다 — 느려지고 JSON 응답이 늦어진다.
+        # 기본은 끄고(OLLAMA_THINK=1이면 켬), thinking을 지원하지 않는 모델에는 보내지 않는다.
+        think = os.environ.get("OLLAMA_THINK", "")
+        if think in ("0", "1"):
+            body["think"] = think == "1"
+        elif self.name.startswith("qwen3"):
+            body["think"] = False
+        data = post_json(OLLAMA_URL, body, timeout=float(os.environ.get("OLLAMA_TIMEOUT", "180")))
+        tokens = data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
+        return data["message"]["content"], {
+            "model": self.name, "tokens": tokens,
+            "usd": round(tokens / 1000 * self.usd_per_1k, 6)}
+
+    def _json(self, system: str, user: str, schema: dict) -> tuple[dict, dict]:
+        text, usage = self._call(system, user, schema)
+        try:
+            return json.loads(text), usage
+        except json.JSONDecodeError:
+            return {}, usage   # 호출한 쪽이 기본값으로 대체한다
+
+
+class OllamaFastLLM(_Ollama):
+    @traceable(run_type="llm", name="fast_llm.route")
+    def route(self, query: str) -> tuple[dict, dict]:
+        out, usage = self._json(ROUTE_SYSTEM, query, ROUTE_SCHEMA)
+        return {"route": out.get("route") if out.get("route") in ROUTES else "trace"}, usage
+
+    @traceable(run_type="llm", name="fast_llm.select_expansions")
+    def select_expansions(self, query: str, candidates: list[str]) -> tuple[list[str], dict]:
+        out, usage = self._json(SELECT_SYSTEM, f"[질문]\n{query}\n[후보]\n" + "\n".join(candidates),
+                                SELECT_SCHEMA)
+        chosen = [c for c in out.get("expand", []) if c in candidates]
+        return (chosen or candidates), usage    # 모델이 비우면 후보 전체(안전한 쪽)
+
+    @traceable(run_type="llm", name="fast_llm.chat")
+    async def chat(self, query: str, history: list[dict], on_token=None) -> tuple[str, dict]:
+        text, usage = await asyncio.to_thread(self._call, "코드 호출 흐름을 설명하는 도우미입니다. 한 두 문장으로 답하세요.", query, None)
+        if on_token is not None:
+            on_token(text)
+        return text, usage
+
+
+class OllamaQualityLLM(_Ollama):
+    @traceable(run_type="llm", name="quality_llm.explain")
+    async def explain(self, query: str, structure: dict, snippets: dict[str, str],
+                      attempt: int, feedback: str | None, on_token=None) -> tuple[dict, dict]:
+        structure_text = "\n".join(f"{a} -> {b}" for a, b in structure["pairs"]) or "(호출 없음)"
+        if structure.get("scope") == "class":   # 클래스 전체 질문: 메서드별로 나눠 설명하도록 범위를 알려 준다
+            structure_text = (f"[범위] {structure['qualname']} 클래스 전체 — 메서드: {', '.join(structure['entries'])}\n"
+                              + structure_text)
+        out, usage = await asyncio.to_thread(self._json, EXPLAIN_SYSTEM,
+                                explain_user_prompt(query, structure_text, snippets, feedback,
+                                                    structure.get("procedure", "")),
+                                EXPLAIN_SCHEMA)
+        result = {"explanation": out.get("explanation", ""),
+                  "claims": [c for c in out.get("claims", [])
+                             if isinstance(c, dict) and "caller" in c and "callee" in c]}
+        if on_token is not None and result["explanation"]:
+            on_token(result["explanation"])
+        return result, usage
+
+    @traceable(run_type="llm", name="quality_llm.explain_doc")
+    async def explain_doc(self, query: str, section: dict, check: dict) -> tuple[dict, dict]:
+        out, usage = await asyncio.to_thread(self._json, DOC_SYSTEM, doc_user_prompt(query, section, check), EXPLAIN_SCHEMA)
+        return {"explanation": out.get("explanation", ""),
+                "claims": [c for c in out.get("claims", [])
+                           if isinstance(c, dict) and "caller" in c and "callee" in c]}, usage

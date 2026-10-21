@@ -1,0 +1,25 @@
+# Recat 정책 파일 — 기본값은 모두 "닫힘"(fail-closed)이다.
+cloud:
+  enabled: false                 # false면 어떤 경우에도 외부 LLM으로 보내지 않는다
+  allowed_endpoints:
+    - https://api.openai.com/v1
+  require_attestation: true      # 고객이 "이 저장소는 외부 전송 허용"을 명시적으로 확인했는가
+  require_masking: true
+  max_snippet_chars: 4000        # 함수 하나당 모델에 보내는 코드 상한
+tracing:
+  langsmith_enabled: false       # LangSmith 추적 전체 스위치 (키가 있는 환경에서 true로)
+  hide_inputs_outputs: true      # 클라우드로 보낼 때는 입출력을 숨겨 메타데이터(노드·지연·토큰·오류)만 보낸다
+  internal_endpoints: []         # 사내 추적 서버(LangSmith 자체 호스팅·BYOC). 여기 있는 주소면 민감 저장소도 추적한다
+  #  - https://langsmith.internal.example.com/api
+audit:
+  log_metadata_only: true        # 코드 본문은 감사 로그에 남기지 않는다
+repos:
+  allowed:                       # 허용 목록 밖의 저장소는 403
+    - sample_py
+    - sample_java
+  sensitive:                     # 이 목록의 저장소는 클라우드·LangSmith 모두 차단
+    - sample_java
+agent:
+  max_tool_calls: 20             # 한 질문에서 get_callees 호출 상한
+  max_depth: 3
+  max_explain_retries: 2

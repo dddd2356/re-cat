@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<title>Re-cat — 대화형 코드 이해 도우미</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9; --panel: #ffffff; --panel2: #eef0f4; --line: #dfe3ea; --text: #1b2230; --muted: #6b7588;
+    --accent: #2a5bd7; --ok: #14804a; --ok-bg: #e3f5ea; --bad: #b3261e; --bad-bg: #fbe5e3;
+    --warn: #a15c00; --warn-bg: #fdf1db; --warn-line: #f0d29a; --warn-ink: #7a4600;
+    --doc: #6a3fb5; --doc-bg: #f1ebfb;
+    --node: #ffffff; --node-line: #c9cfda; --class-fill: #e8eefc; --class-line: #8aa4e8; --unres-fill: #fdf1db; --hl-fill: #fdf1db;
+    --sel: #1b2230; --nlabel: #1b2230; --edge: #8a93a6; --elabel: #4a5468; --code: #1c44a8; --soft: #4a5468; --interp-line: #a9b1c0; --vrow: #fafbfc;
+    --font: 'IBM Plex Sans KR', system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #0f131b; --panel: #171c26; --panel2: #1e2430; --line: #2a3242; --text: #e6e9f0; --muted: #9aa3b5;
+    --accent: #7ba2ff; --ok: #5fd09a; --ok-bg: #15301f; --bad: #ff8d85; --bad-bg: #3b1a18;
+    --warn: #f0b35a; --warn-bg: #35280f; --warn-line: #5b4a22; --warn-ink: #f0d79a;
+    --doc: #c3a6ff; --doc-bg: #2a2140;
+    --node: #1e2430; --node-line: #3a4458; --class-fill: #1d2a4a; --class-line: #5b7bd0; --unres-fill: #2a2418; --hl-fill: #3a3018;
+    --sel: #ffffff; --nlabel: #eef1f8; --edge: #7d889c; --elabel: #b5bccb; --code: #a9c2ff; --soft: #b5bccb; --interp-line: #5a6478; --vrow: #141923;
+  } }
+  :root[data-theme="dark"] {
+    --bg: #0f131b; --panel: #171c26; --panel2: #1e2430; --line: #2a3242; --text: #e6e9f0; --muted: #9aa3b5;
+    --accent: #7ba2ff; --ok: #5fd09a; --ok-bg: #15301f; --bad: #ff8d85; --bad-bg: #3b1a18;
+    --warn: #f0b35a; --warn-bg: #35280f; --warn-line: #5b4a22; --warn-ink: #f0d79a;
+    --doc: #c3a6ff; --doc-bg: #2a2140;
+    --node: #1e2430; --node-line: #3a4458; --class-fill: #1d2a4a; --class-line: #5b7bd0; --unres-fill: #2a2418; --hl-fill: #3a3018;
+    --sel: #ffffff; --nlabel: #eef1f8; --edge: #7d889c; --elabel: #b5bccb; --code: #a9c2ff; --soft: #b5bccb; --interp-line: #5a6478; --vrow: #141923;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); overflow: hidden; font-family: var(--font);
+    font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; font-size: 14px; }
+  #app { height: 100vh; display: flex; flex-direction: column; }
+  button { font: inherit; cursor: pointer; border: 0; border-radius: 8px; padding: 8px 14px; background: var(--accent); color: #fff; }
+  button:disabled { background: var(--line); cursor: default; }
+  button.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  select, input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  input:focus, select:focus { outline: 1px solid var(--accent); }
+
+  /* 상단 바 */
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 18px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .brand { font-weight: 700; font-size: 16px; letter-spacing: .2px; }
+  .brand small { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 12px; }
+  .pill { font-size: 12px; padding: 3px 10px; border-radius: 12px; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); }
+  .pill.lock { color: var(--warn); border-color: var(--warn-line); background: var(--warn-bg); }
+  .spacer { flex: 1; }
+  header a { color: var(--muted); font-size: 12px; text-decoration: none; }
+  header a:hover { color: var(--text); }
+
+  /* 본문 2단 */
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(380px, 46%) 6px 1fr; }
+  .vsplit { cursor: col-resize; background: var(--panel2); border-left: 1px solid var(--line); border-right: 1px solid var(--line); position: relative; }
+  .vsplit::after { content: ""; position: absolute; top: 50%; left: 1px; width: 2px; height: 36px; margin-top: -18px; border-radius: 2px; background: var(--node-line); }
+  .vsplit:hover, .vsplit.drag { background: var(--accent-bg, var(--panel2)); }
+  body.resizing, body.resizing * { user-select: none !important; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr !important; grid-template-rows: 42% 1fr; } .vsplit { display: none; } body { overflow: auto; } #app { height: auto; min-height: 100vh; } }
+  section { min-height: 0; display: flex; flex-direction: column; }
+  .left { background: var(--panel); min-width: 0; }
+  .right { min-width: 0; }
+  .tabs { display: flex; gap: 4px; padding: 10px 14px 0; border-bottom: 1px solid var(--line); }
+  .tab { padding: 8px 14px; border-radius: 8px 8px 0 0; background: transparent; color: var(--muted); border: 1px solid transparent; border-bottom: 0; }
+  .tab.on { background: var(--bg); color: var(--text); border-color: var(--line); }
+  .canvas { flex: 1; min-height: 0; background: var(--bg); position: relative; display: flex; flex-direction: column; }
+  .graph-scroll { flex: 1; min-height: 0; overflow: auto; padding: 4px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 14px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); background: var(--panel); }
+  .legend i { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--edge); vertical-align: middle; margin-right: 5px; }
+  .legend i.d { border-top: 2px dashed var(--warn); }
+  .empty { margin: auto; color: var(--muted); text-align: center; padding: 30px; line-height: 1.7; }
+  .detail { background: var(--panel); padding: 10px 14px; overflow: auto; font-size: 13px; flex: none; }
+  .detail .codeview pre { max-height: none; }
+  .detail .codeview.full pre { max-height: 60vh; }
+  .splitter { flex: none; height: 8px; cursor: row-resize; border-top: 1px solid var(--line); background: var(--panel2); position: relative; }
+  .splitter::after { content: ""; position: absolute; left: 50%; top: 3px; width: 36px; height: 2px; margin-left: -18px; border-radius: 2px; background: var(--node-line); }
+  .splitter:hover, .splitter.drag { background: var(--accent-bg, var(--panel2)); }
+  .big { position: fixed; inset: 0; z-index: 50; background: rgba(15, 19, 27, .55); display: flex; padding: 28px; }
+  .big .box { margin: auto; width: min(1100px, 100%); height: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
+  .big .ch { padding: 10px 16px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .big .ch b { color: var(--text); }
+  .big pre { flex: 1; margin: 0; padding: 12px 0; overflow: auto; font: 13px/1.6 'IBM Plex Mono', ui-monospace, Menlo, monospace; background: var(--bg); }
+  .big .ln { display: inline-block; width: 52px; padding-right: 12px; text-align: right; color: var(--muted); user-select: none; }
+  .detail h4 { margin: 0 0 6px; font-size: 13px; }
+  .detail h4.dh { display: flex; align-items: center; gap: 8px; position: sticky; top: -10px; background: var(--panel); padding: 4px 0; z-index: 1; }
+  .detail h4.dh .x { margin-left: auto; }
+  .detail.fold { padding-top: 6px; padding-bottom: 6px; border-top: 1px solid var(--line); }
+  .detail.fold h4 { margin: 0; }
+  .fn { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+  .fn:last-child { border-bottom: 0; }
+  .fn code { flex: 1; font-size: 12px; color: var(--code); }
+  .impact { margin-top: 8px; padding: 8px 10px; background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 8px; color: var(--warn-ink); font-size: 12px; }
+
+  /* SVG 노드·간선 */
+  .node rect { fill: var(--node); stroke: var(--node-line); stroke-width: 1.2; }
+  .node.class rect { fill: var(--class-fill); stroke: var(--class-line); }
+  .node.module rect { fill: var(--panel2); stroke: var(--node-line); }
+  .crumbs { display: flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 12.5px; color: var(--muted); border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  .crumb { background: transparent; color: var(--accent); padding: 2px 6px; border-radius: 6px; }
+  .crumb.on { color: var(--text); font-weight: 600; background: var(--panel2); }
+  .crumbs .hint { margin-left: auto; font-size: 11.5px; }
+  .node.external rect { fill: var(--panel); stroke: var(--node-line); stroke-dasharray: 3 3; }
+  .node.external .nlabel { fill: var(--muted); }
+  .node.unresolved rect { fill: var(--unres-fill); stroke: var(--warn); stroke-dasharray: 5 4; }
+  .node.entry rect { stroke: var(--ok); stroke-width: 2; }
+  .node.hl rect { stroke: var(--warn); stroke-width: 2.4; fill: var(--hl-fill); }
+  .node.sel rect { stroke: var(--sel); stroke-width: 2; }
+  .nlabel { fill: var(--nlabel); font-size: 13px; font-weight: 600; }
+  .nsub { fill: var(--muted); font-size: 11px; }
+  .node rect.badge-bg { fill: var(--warn); stroke: none; } .badge-t { fill: #fff; font-size: 10px; font-weight: 700; }
+  .edge { stroke: var(--edge); stroke-width: 1.4; }
+  .edge.dashed { stroke: var(--warn); stroke-dasharray: 5 4; }
+  .elabel { fill: var(--elabel); font-size: 11px; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+
+  /* 채팅 */
+  .right { background: var(--bg); }
+  #log { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+  #log::-webkit-scrollbar, .graph-scroll::-webkit-scrollbar, .detail::-webkit-scrollbar { width: 9px; height: 9px; }
+  #log::-webkit-scrollbar-thumb, .graph-scroll::-webkit-scrollbar-thumb, .detail::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+  #log > * { flex-shrink: 0; }   /* 내용이 긴 카드가 스크롤 영역 안에서 찌그러지지 않게 */
+  .row { display: flex; } .row.user { justify-content: flex-end; }
+  .bubble { max-width: 88%; padding: 10px 14px; border-radius: 14px; line-height: 1.55; white-space: pre-wrap; }
+  .row.user .bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .steps { font-size: 12px; color: var(--muted); padding: 2px 6px; display: flex; flex-direction: column; gap: 2px; }
+  .steps .done::before { content: "✓ "; color: var(--ok); }
+  .steps .sum { cursor: pointer; user-select: none; }
+  .steps .sum:hover { color: var(--text); }
+  .steps .live::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%;
+    border: 2px solid var(--accent); border-right-color: transparent; animation: spin .8s linear infinite; vertical-align: -1px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .steps .list { padding-left: 10px; border-left: 2px solid var(--line); margin: 2px 0 2px 4px; display: flex; flex-direction: column; gap: 2px; }
+  .ans .lead { padding: 12px 16px; white-space: pre-wrap; line-height: 1.7; font-size: 14px; }
+  .ans .lead .tag { background: var(--panel2); color: var(--muted); }
+  .ans details.ev { border-top: 1px solid var(--line); }
+  .ans details.ev > summary { padding: 8px 14px; cursor: pointer; font-size: 12.5px; color: var(--muted); list-style: none; display: flex; gap: 8px; align-items: center; }
+  .ans details.ev > summary::before { content: "▸"; transition: transform .15s; }
+  .ans details.ev[open] > summary::before { transform: rotate(90deg); }
+  .ans details.ev > summary b { color: var(--ok); font-weight: 600; }
+  .ans details.ev > summary .w { color: var(--warn); }
+  .ans .sugg { padding: 8px 14px 10px; border-top: 1px solid var(--line); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
+  .ans { max-width: 94%; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); }
+  .ans .blk { padding: 10px 14px; border-top: 1px solid var(--line); white-space: pre-wrap; line-height: 1.6; }
+  .ans .blk:first-child { border-top: 0; }
+  .ans .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-bottom: 6px; }
+  .blk.verified { border-left: 3px solid var(--ok); } .blk.verified .tag { background: var(--ok-bg); color: var(--ok); }
+  .blk.unknown { border-left: 3px solid var(--warn); } .blk.unknown .tag { background: var(--warn-bg); color: var(--warn); }
+  .blk.interp { border-left: 3px solid var(--interp-line); } .blk.interp .tag { background: var(--panel2); color: var(--muted); }
+  .blk.doc { border-left: 3px solid var(--doc); } .blk.doc .tag { background: var(--doc-bg); color: var(--doc); }
+  .blk.check { border-left: 3px solid var(--accent); } .blk.check .tag { background: var(--panel2); color: var(--accent); }
+  .codebar { padding: 8px 14px; border-top: 1px solid var(--line); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
+  .codebar button.on { background: var(--accent); color: #fff; }
+  .codeview { border-top: 1px solid var(--line); }
+  .codeview .ch { padding: 6px 14px; font-size: 12px; color: var(--muted); background: var(--panel2); display: flex; gap: 8px; }
+  .codeview .ch b { color: var(--text); font-weight: 600; }
+  .codeview pre { margin: 0; padding: 10px 0; overflow: auto; max-height: 340px; font: 12.5px/1.55 'IBM Plex Mono', ui-monospace, Menlo, monospace; background: var(--bg); }
+  .codeview .ln { display: inline-block; width: 44px; padding-right: 10px; text-align: right; color: var(--muted); user-select: none; }
+  .codeview pre { position: relative; }
+  .codeview .cl { white-space: pre; padding-right: 14px; }
+  .codeview .cl.hl { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+  .codeview .cl.fhead .ln { color: var(--accent); }
+  .codeview.full pre { max-height: 60vh; }
+  .codeview .acts { margin-left: auto; display: flex; gap: 4px; }
+  .codeview .fjump { padding: 5px 14px; font-size: 11.5px; color: var(--muted); display: flex; gap: 4px; flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--line); }
+  .codeview .fjump button { font-size: 11px; padding: 1px 7px; }
+  .big .codeview { flex: 1; display: flex; flex-direction: column; min-height: 0; border: 0; }
+  .big .codeview pre { flex: 1; max-height: none; font: 13px/1.6 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
+  .codeview .note { padding: 4px 14px 8px; font-size: 11.5px; color: var(--warn); }
+  .vrow { padding: 8px 14px; border-top: 1px solid var(--line); background: var(--vrow); font-size: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; color: var(--muted); }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); } .badge.bad { background: var(--bad-bg); color: var(--bad); } .badge.na { background: var(--panel2); color: var(--muted); }
+
+  .guide { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 16px 18px; line-height: 1.6; }
+  .guide h3 { margin: 0 0 4px; font-size: 15px; } .guide .sub { color: var(--muted); margin-bottom: 12px; font-size: 13px; }
+  .guide ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 9px; }
+  .guide li { display: flex; gap: 12px; } .guide .num { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); font-size: 12px; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+  .guide li b { display: block; } .guide li span { color: var(--soft); font-size: 13px; }
+  .chips { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .guide .note { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+
+  form { display: flex; gap: 8px; padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--line); }
+  form input { flex: 1; }
+  .err { color: var(--bad); font-size: 12px; padding: 4px 16px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">Re-cat<small>대화형 코드 이해 도우미</small></div>
+    <select v-model="repo" @change="onRepoChange" title="분석할 저장소">
+      <option v-for="r in repos" :key="r.repo" :value="r.repo">{{ r.repo }}{{ r.sensitive ? ' 🔒' : '' }}</option>
+    </select>
+    <span v-if="currentSensitive" class="pill lock">🔒 민감 저장소 — 로컬 처리 · 추적 차단</span>
+    <span class="pill">{{ backendLabel }}</span>
+    <div class="spacer"></div>
+    <button class="ghost small" @click="showGuide = !showGuide">{{ showGuide ? '가이드 닫기' : '사용 가이드' }}</button>
+    <a href="/admin" target="_blank">관리자 ↗</a>
+  </header>
+
+  <div class="big" v-if="bigCode" @click.self="bigCode = null">
+    <div class="box"><code-box :c="bigCode" :big="true" @close="bigCode = null"></code-box></div>
+  </div>
+  <main :style="leftW ? { gridTemplateColumns: leftW + 'px 6px 1fr' } : null">
+    <!-- 왼쪽: 구조 개요 / 호출 흐름 그래프 -->
+    <section class="left" ref="leftEl">
+      <div class="tabs">
+        <button class="tab" :class="{ on: tab === 'overview' }" @click="tab = 'overview'">구조 개요</button>
+        <button class="tab" :class="{ on: tab === 'flow' }" @click="tab = 'flow'">호출 흐름
+          <span v-if="flow" class="pill" style="margin-left:6px">{{ flow.entry }}</span></button>
+      </div>
+      <div class="canvas">
+        <template v-if="tab === 'overview'">
+          <div class="crumbs">
+            <button class="crumb" :class="{ on: !nav.length }" @click="navTo(0)">전체 구조</button>
+            <template v-for="(lv, i) in nav" :key="i"><span>›</span>
+              <button class="crumb" :class="{ on: i === nav.length - 1 }" @click="navTo(i + 1)">{{ lv.label }}</button></template>
+            <span class="hint">더블클릭: 안으로 들어가기 · 클릭: 코드 보기</span>
+          </div>
+          <template v-if="!nav.length">
+            <graph-view v-if="overview && overview.nodes.length" :nodes="ovNodes" :edges="ovEdges"
+                        :highlight="ovHighlight" :selected="selGroup" @select="onGroupSelect" @open="openGroup"></graph-view>
+            <div v-else class="empty">{{ overviewError || '구조 개요를 불러오는 중…' }}</div>
+          </template>
+          <graph-view v-else-if="navTop.nodes" :nodes="navNodes" :edges="navEdges" :highlight="flowHighlight"
+                      :selected="selSymbol" :entry="navTop.entry || ''" @select="onNavSelect" @open="onNavOpen"></graph-view>
+          <div v-else class="empty">{{ navTop.error || '불러오는 중…' }}</div>
+        </template>
+        <template v-else>
+          <graph-view v-if="flow" :nodes="flowNodes" :edges="flowEdges" :highlight="flowHighlight"
+                      :selected="selSymbol" :entry="flow.entry" @select="onSymbolSelect"></graph-view>
+          <div v-else class="empty">질문하면 이 질문의 호출 흐름이 여기에 그려집니다.<br>
+            구조 개요에서 클래스를 눌러 함수를 고르는 방법도 있습니다.</div>
+        </template>
+        <div class="legend">
+          <span><i></i>정적 분석이 확정한 호출</span>
+          <span><i class="d"></i>분석이 따라가지 못함 (확인 안 됨)</span>
+          <span v-if="tab === 'overview'">선 위 숫자 = 호출 횟수 · 노란 배지 = 미해석 호출 수</span>
+        </div>
+        <div class="splitter" v-if="detail && !detailFold" :class="{ drag: dragging }" @mousedown.prevent="startDrag" title="끌어서 코드 영역 크기 조절"></div>
+        <div class="detail" v-if="detail" :class="{ fold: detailFold }" :style="detailFold ? null : { height: detailH + 'px' }">
+          <h4 class="dh"><span>{{ detail.title }}</span>
+            <button v-if="detail.file && !detailFold" class="small ghost" @click="showFile(detail.file)">파일 전체 보기</button>
+            <button class="small ghost x" @click="detailFold = !detailFold" :title="detailFold ? '펼치기' : '아래로 내리기 — 그래프를 넓게'">{{ detailFold ? '펼치기 ▴' : '내리기 ▾' }}</button>
+            <button class="small ghost" @click="closeDetail" title="닫기 (Esc)">닫기 ✕</button></h4>
+          <template v-if="!detailFold">
+          <div v-if="detail.functions">
+            <div class="fn" v-for="f in detail.functions" :key="f.id">
+              <code>{{ f.qualname }}</code>
+              <button class="small" @click="ask(f.qualname + ' 호출 흐름')" :disabled="sending">호출 흐름</button>
+              <button class="small ghost" @click="showImpact(f.qualname)">영향 범위</button>
+              <button class="small ghost" @click="showDetailCode(f.qualname)">코드</button>
+            </div>
+          </div>
+          <div v-if="detail.symbol">
+            <div class="fn"><code>{{ detail.symbol }}</code>
+              <button class="small" @click="ask(detail.symbol + ' 호출 흐름')" :disabled="sending">호출 흐름</button>
+              <button class="small ghost" @click="showImpact(detail.symbol)">영향 범위</button>
+              <button class="small ghost" @click="showDetailCode(detail.symbol)">코드</button></div>
+          </div>
+          <code-box v-if="detailCode" :c="detailCode" style="border:1px solid var(--line);border-radius:8px;margin-top:8px;overflow:hidden" @big="bigCode = detailCode"></code-box>
+          <div v-if="impact" class="impact">
+            <b>{{ impact.qualname }}</b>를 바꾸면 영향받는 곳 ({{ impact.affected.length }}개, 깊이 {{ impact.depth }}):
+            {{ impact.affected.length ? impact.affected.join(', ') : '이 함수를 호출하는 곳이 분석에서 확인되지 않았습니다 (분석이 못 따라간 호출은 포함되지 않음)' }}
+          </div>
+          </template>
+        </div>
+      </div>
+    </section>
+    <div class="vsplit" :class="{ drag: hdragging }" @mousedown.prevent="startHDrag" @dblclick="resetLeftW"
+         title="끌어서 구조 그래프·대화 너비 조절 (더블클릭: 처음 비율로)"></div>
+
+    <!-- 오른쪽: 대화 -->
+    <section class="right">
+      <div id="log" ref="logEl">
+        <div v-if="showGuide || log.length === 0" class="guide">
+          <h3>이렇게 쓰세요</h3>
+          <div class="sub">호출 관계는 정적 분석이 확정하고, AI는 설명만 합니다. 설명 속 호출 관계는 분석 결과와 대조해 검증됩니다.</div>
+          <ol>
+            <li><div class="num">1</div><div><b>저장소를 고르고 구조 개요를 봅니다</b>
+              <span>왼쪽 그래프가 클래스·파일 단위 의존 관계입니다. 더블클릭하면 그 안의 함수들로, 함수를 다시 더블클릭하면 그 함수의 호출 흐름으로 들어갑니다. 클릭하면 코드가 아래에 열립니다. 🔒 저장소는 외부 전송과 추적이 차단됩니다.</span></div></li>
+            <li><div class="num">2</div><div><b>궁금한 곳을 묻습니다</b>
+              <span>자연어로 묻거나, 그래프에서 클래스를 눌러 함수를 고릅니다.</span>
+              <div class="chips"><button class="small ghost" v-for="q in examples" :key="q" @click="input = q">{{ q }}</button></div></div></li>
+            <li><div class="num">3</div><div><b>진행 단계를 확인합니다</b>
+              <span>보안 게이트 → 시작 함수 → 호출 따라가기 → 설명 → 검증. 검증에 실패하면 "다시 설명"이 표시됩니다.</span></div></li>
+            <li><div class="num">4</div><div><b>구역을 구분해서 읽습니다</b>
+              <span><b style="display:inline;color:var(--ok)">구조(검증됨)</b>는 믿어도 되는 호출 관계, <b style="display:inline;color:var(--warn)">확인 안 됨</b>은 직접 확인할 부분, <b style="display:inline;color:var(--muted)">해석</b>은 AI의 서술로 검증되지 않았습니다.</span></div></li>
+            <li><div class="num">5</div><div><b>문서와 코드를 맞춰 봅니다</b>
+              <span>"기획서의 3단계에 해당하는 코드가 ○○ 맞아?"처럼 물으면 저장소 안 문서(md·txt)의 해당 절을 찾고, 문서에 적힌 호출 관계를 코드와 대조합니다. <b style="display:inline;color:var(--doc)">문서 근거</b>는 문서 내용일 뿐 검증 대상이 아니고, ✗ 불일치·코드에 없는 이름은 문서가 낡았을 수 있다는 신호입니다.</span></div></li>
+          </ol>
+          <div class="note">함수를 바꾸기 전에는 그래프의 "영향 범위"로 이 함수를 호출하는 곳을 확인하세요.</div>
+        </div>
+
+        <template v-for="item in log" :key="item.id">
+          <div v-if="item.kind === 'user'" class="row user"><div class="bubble">{{ item.text }}</div></div>
+          <div v-else-if="item.kind === 'steps'" class="steps">
+            <div v-if="!item.done" class="live">{{ item.steps.length ? item.steps[item.steps.length - 1] : '질문을 확인하는 중…' }}</div>
+            <div v-else class="sum done" @click="item.open = !item.open">처리 과정 {{ item.steps.length }}단계{{ item.summary ? ' · ' + item.summary : '' }} {{ item.open ? '▾' : '▸' }}</div>
+            <div v-if="item.open" class="list"><div v-for="(s, i) in item.steps" :key="i" class="done">{{ s }}</div></div>
+          </div>
+          <div v-else-if="item.kind === 'agent'" class="row"><div class="bubble" style="background:var(--panel)">{{ item.text }}</div></div>
+          <div v-else-if="item.kind === 'answer'" class="ans">
+            <template v-if="item.lead">
+              <div class="lead"><span class="tag">{{ item.lead.tag }}</span><div>{{ item.lead.text }}</div></div>
+              <div v-for="(b, i) in item.shown" :key="'s' + i" class="blk" :class="b.cls"><span class="tag">{{ b.tag }}</span><div>{{ b.text }}</div></div>
+              <details class="ev" v-if="item.evidence.length">
+                <summary>근거 보기 — {{ item.evSummary }}</summary>
+                <div v-for="(b, i) in item.evidence" :key="'e' + i" class="blk" :class="b.cls"><span class="tag">{{ b.tag }}</span><div>{{ b.text }}</div></div>
+              </details>
+            </template>
+            <div v-else v-for="(b, i) in item.blocks" :key="i" class="blk" :class="b.cls"><span class="tag">{{ b.tag }}</span><div>{{ b.text }}</div></div>
+            <div class="vrow" v-if="item.v">
+              <span class="badge" :class="item.v.ok ? 'ok' : 'bad'">{{ item.v.ok ? '구조 검증 통과' : '검증 실패' }}</span>
+              <span class="badge ok">검증됨 {{ item.v.verified }}</span>
+              <span class="badge na" v-if="item.v.unverifiable">판정 불가 {{ item.v.unverifiable }}</span>
+              <span class="badge bad" v-if="item.v.errors">오류 주장 {{ item.v.errors }}</span>
+              <span v-if="item.v.attempts > 1">· 재설명 {{ item.v.attempts - 1 }}회 후 통과</span>
+            </div>
+            <div class="sugg" v-if="item.suggestions && item.suggestions.length">이어서
+              <button v-for="sg in item.suggestions" :key="sg.label" class="small ghost" :disabled="sending"
+                      @click="sg.impact ? showImpact(sg.impact) : ask(sg.ask)">{{ sg.label }}</button>
+            </div>
+            <div class="codebar" v-if="item.symbols && item.symbols.length">코드 보기
+              <button v-for="q in item.symbols" :key="q" class="small ghost" :class="{ on: item.code[q] }" @click="toggleCode(item, q)">{{ q }}</button>
+            </div>
+            <code-box v-for="q in Object.keys(item.code)" :key="'c' + q" :c="item.code[q]" @big="bigCode = item.code[q]"></code-box>
+          </div>
+        </template>
+        <div v-if="error" class="err">{{ error }}</div>
+      </div>
+      <form @submit.prevent="onSubmit">
+        <input v-model="input" autocomplete="off" placeholder="예: 주문 생성은 어떻게 동작해? / OrderService.create 호출 흐름" />
+        <button type="submit" :disabled="sending">{{ sending ? '분석 중…' : '보내기' }}</button>
+      </form>
+    </section>
+  </main>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="/web_graph.js"></script>
+<script>
+const { createApp, ref, reactive, computed, nextTick, provide } = Vue;
+
+const STEP_LABELS = {
+  GateDecided: e => `보안 게이트: ${e.decision === 'cloud' ? '클라우드 허용' : '로컬 처리'}${e.sensitive ? ' (민감 저장소 — 추적 차단)' : ''}`,
+  RouteDecided: e => e.route === 'trace' ? '코드 흐름 질문으로 판단' : e.route === 'doc' ? '문서-코드 대조 질문으로 판단' : null,
+  EntryPoint: e => e.scope === 'class' ? `시작 범위: ${e.symbol} 클래스 전체 (메서드 ${e.candidates.length}개: ${e.candidates.join(', ')})`
+    : `시작 함수 선택: ${e.symbol}${e.candidates.length > 1 ? ` (후보 ${e.candidates.join(', ')})` : ''}`,
+  FollowUp: e => `이어지는 질문으로 판단 — 직전 질문 "${e.of}"에 이어서 처리`,
+  EntryPointNotFound: e => e.named ? `없는 이름: ${e.named.join(', ')} — 비슷한 함수로 대신 답하지 않음` : '시작 함수를 찾지 못함',
+  RouteToDocs: e => `등록된 문서와 겹쳐 문서 질문으로 처리 (${e.section})`,
+  ExploreStep: e => `호출 따라가기 (깊이 ${e.depth}): ${e.symbol} → ${e.callees}개${e.unresolved ? `, 미해석 ${e.unresolved}개` : ''}`,
+  ToolBudgetReached: e => `도구 호출 상한(${e.limit}회)에 도달 — 탐색 중단`,
+  Explained: e => `설명 작성 (시도 ${e.attempt}, ${e.backend}, 주장 ${e.claims}개)`,
+  Verification: e => e.ok ? `검증 통과 (확인된 관계 ${e.verified}개)`
+    : `검증 반려: ${e.empty ? '설명이 비었거나 호출 주장 없음, ' : ''}존재하지 않는 이름 ${e.hallucinated}, 체인에 없는 관계 ${e.wrong} → 다시 설명`,
+  LLMUnavailable: e => `모델 서버 응답 없음 (${e.stage}) — ${e.stage === 'route' ? '규칙 기반 분류로 대체' : e.stage === 'explain' ? '정적 분석 결과만으로 답변' : '대조 결과만 제공'}`,
+  Escalated: e => `모델 상향: ${e.to}`,
+  Fallback: e => e.reason === 'llm_unavailable' ? '모델 없이 구조 출력으로 응답' : '검증 통과 실패 — LLM 없는 구조 출력으로 대체',
+  DocSearch: e => e.sections ? `문서 검색: ${e.sections}개 절 중 ${e.hits.length ? e.hits.slice(0, 3).join(', ') : '맞는 절 없음'}` : '색인된 문서 없음',
+  DocSection: e => `문서 절 선택: ${e.file} · ${e.section}${e.symbol ? ` (질문한 함수 ${e.symbol})` : ''}`,
+  DocCheck: e => `문서와 코드 대조: 일치 ${e.match + e.indirect}, 불일치 ${e.mismatch}, 코드에 없는 이름 ${e.missing}, 확인 안 됨 ${e.unknown}`,
+  DocNotFound: () => '문서 절을 찾지 못함',
+  Finalize: () => '응답 완성',
+};
+
+// 최종 응답은 "[구조 — ...]", "[분석이 따라가지 못한 호출 — ...]", "[해석 — ...]" 구역으로 나뉘어 온다.
+function parseAnswer(reply) {
+  const blocks = [];
+  const re = /^\[([^\]]+)\]\s*$/gm;
+  const marks = [...reply.matchAll(re)];
+  if (!marks.length) return [{ cls: 'interp', tag: '답변', text: reply }];
+  marks.forEach((m, i) => {
+    const body = reply.slice(m.index + m[0].length, i + 1 < marks.length ? marks[i + 1].index : undefined).trim();
+    const t = m[1];
+    const cls = t.startsWith('구조') ? 'verified' : t.startsWith('분석이') ? 'unknown'
+              : t.startsWith('문서 근거') ? 'doc' : (t.startsWith('코드 대조') || t.startsWith('질문한 함수')) ? 'check' : 'interp';
+    const tag = cls === 'verified' ? '구조 · 정적 분석으로 확인됨' : cls === 'unknown' ? '확인 안 됨'
+              : cls === 'doc' ? '문서 근거 · ' + t.replace(/^문서 근거 — /, '').replace(/ \(문서 내용이며 검증 대상 아님\)$/, '') + ' · 검증 대상 아님'
+              : cls === 'check' ? (t.startsWith('코드 대조') ? '코드 대조 · 문서의 호출 관계를 정적 분석과 대조' : '질문한 함수와의 연결 · 정적 분석으로 확인')
+              : t.startsWith('해석 없음') ? '해석 없음' : t.includes('대응 여부는 추정') ? '해석 · 대응 판단은 추정, 검증되지 않음' : '해석 · 검증되지 않음';
+    blocks.push({ cls, tag, text: body || t });
+  });
+  return blocks;
+}
+
+// 대화처럼 읽히게: 설명(해석)을 맨 위에, 근거(정적 분석 구조·확인 안 됨·문서 원문)는 접어 둔다.
+// 설명이 없으면(검증 실패·LLM 없음) 근거를 그대로 펼쳐 보여 준다 — 근거를 숨긴 채 빈 답을 주지 않기 위해.
+function arrange(blocks, structure) {
+  const lead = blocks.find(b => b.cls === 'interp' && b.tag !== '해석 없음');
+  if (!lead || blocks.length === 1) return { lead: null };
+  const rest = blocks.filter(b => b !== lead);
+  // 문서-코드 대조 결과는 답의 핵심이라 펼쳐 둔다 — 단, 대조할 호출 관계가 없으면 접는다
+  const shown = rest.filter(b => b.cls === 'check' && !b.text.includes('호출 관계가 없습니다'));
+  const evidence = rest.filter(b => !shown.includes(b));
+  const pairs = structure ? structure.pairs.length : 0, unk = structure ? (structure.unresolved || []).length : 0;
+  const parts = [];
+  if (pairs) parts.push(`정적 분석으로 확인된 호출 ${pairs}개`);
+  if (unk) parts.push(`확인 안 됨 ${unk}개`);
+  if (evidence.some(b => b.cls === 'doc')) parts.push('문서 원문');
+  const tag = lead.tag.includes('추정') ? lead.tag : '설명 · 호출 관계는 검증 통과, 의도·이유는 AI 서술';
+  return { lead: { ...lead, tag }, shown, evidence, evSummary: parts.join(' · ') || '세부 내용' };
+}
+
+// ---- 코드 상자: 함수 본문 ↔ 파일 전체 전환, 함수 줄 강조, 함수로 이동 ----
+const CodeBox = {
+  props: { c: Object, big: Boolean },
+  emits: ['big', 'close'],
+  inject: ['loadFile'],
+  data() { return { loading: false }; },
+  computed: {
+    cur() { return this.c.showFull && this.c.full ? this.c.full : this.c; },
+    lines() {
+      const d = this.cur; if (!d.source) return [];
+      const hl = this.c.showFull ? d.highlight : null;
+      const heads = new Set((this.c.showFull && d.functions || []).map(f => f.start_line));
+      return d.source.split('\n').map((t, i) => { const n = d.start_line + i;
+        return { n, t, hl: !!hl && n >= hl[0] && n <= hl[1], head: heads.has(n) }; });
+    },
+  },
+  mounted() { if (this.c.showFull) this.scrollTo(); },
+  methods: {
+    async toggle() {
+      if (!this.c.full) {
+        this.loading = true;
+        const d = await this.loadFile({ symbol: this.c.q });
+        this.loading = false;
+        if (d.error) { this.c.error = d.error; return; }
+        this.c.full = d;
+      }
+      this.c.showFull = !this.c.showFull;
+      if (this.c.showFull) { await this.scrollTo(); if (!this.big) this.$el.scrollIntoView({ block: 'nearest' }); }
+    },
+    async scrollTo(line) {
+      await this.$nextTick();
+      const pre = this.$refs.pre; if (!pre) return;
+      const el = line ? pre.querySelector(`[data-n="${line}"]`) : pre.querySelector('.hl');
+      if (el) pre.scrollTop = Math.max(0, el.offsetTop - 40);
+    },
+  },
+  template: `
+<div class="codeview" :class="{ full: c.showFull }">
+  <div class="ch"><b>{{ c.q || c.file }}</b>
+    <span>{{ cur.file }}{{ c.showFull ? ' · 파일 전체 ' + (cur.line_count || '') + '줄' : (cur.start_line ? ':' + cur.start_line : '') }}</span>
+    <span v-if="c.error" style="color:var(--bad)">{{ c.error }}</span>
+    <span class="acts">
+      <button v-if="c.q && c.source" class="small ghost" :class="{ on: c.showFull }" :disabled="loading" @click="toggle">{{ loading ? '불러오는 중…' : c.showFull ? '함수만 보기' : '파일 전체' }}</button>
+      <button v-if="!big && cur.source" class="small ghost" @click="$emit('big')">크게 보기</button>
+      <button v-if="big" class="small ghost" @click="$emit('close')">닫기 (Esc)</button>
+    </span></div>
+  <div class="fjump" v-if="c.showFull && cur.functions && cur.functions.length">함수로 이동
+    <button v-for="f in cur.functions" :key="f.start_line" class="small ghost" @click="scrollTo(f.start_line)">{{ f.qualname }}</button></div>
+  <pre ref="pre" v-if="cur.source"><div v-for="l in lines" :key="l.n" class="cl" :class="{ hl: l.hl, fhead: l.head }" :data-n="l.n"><span class="ln">{{ l.n }}</span>{{ l.t }}</div></pre>
+  <div class="note" v-if="cur.masked_count">비밀 값 후보 {{ cur.masked_count }}개를 가렸습니다</div>
+  <div class="note" v-if="cur.truncated">길이 제한으로 일부만 표시합니다</div>
+</div>`,
+};
+
+createApp({
+  components: { GraphView: RecatGraph.GraphView, CodeBox },
+  setup() {
+    const backendLabel = ref('recat');
+    const repos = ref([]);
+    const repo = ref('sample_py');
+    const log = ref([]);
+    const input = ref('');
+    const sending = ref(false);
+    const showGuide = ref(true);
+    const error = ref('');
+    const logEl = ref(null);
+    const tab = ref('overview');
+    const overview = ref(null);
+    const overviewError = ref('');
+    const flow = ref(null);
+    const selGroup = ref('');
+    const selSymbol = ref('');
+    const detail = ref(null);
+    const impact = ref(null);
+    const examples = ['주문 생성은 어떻게 동작해?', 'OrderService.create 호출 흐름', '기획서의 3단계 결제 요청에 해당하는 코드가 PaymentClient.request 맞아?', '문서의 주문 취소가 코드랑 맞아?'];
+    const thread = 't-web-' + Math.random().toString(36).slice(2, 8);
+    let nextId = 0;
+
+    const currentSensitive = computed(() => (repos.value.find(r => r.repo === repo.value) || {}).sensitive);
+
+    // ---- 구조 개요 ----
+    const ovNodes = computed(() => (overview.value ? overview.value.nodes : []).map(n => ({
+      id: n.id, label: n.label, kind: n.kind,
+      sub: `${n.kind === 'class' ? '클래스' : '파일'} · 함수 ${n.functions.length}개`, badge: n.unresolved ? '?' + n.unresolved : '' })));
+    const ovEdges = computed(() => (overview.value ? overview.value.edges : []).map(e => ({
+      source: e.source, target: e.target, label: e.count > 1 ? String(e.count) : '' })));
+    const ovHighlight = computed(() => {
+      if (!impact.value || !overview.value) return [];
+      const aff = new Set(impact.value.affected.concat(impact.value.qualname));
+      return overview.value.nodes.filter(n => n.functions.some(f => aff.has(f.qualname))).map(n => n.id);
+    });
+
+    async function api(path) {
+      const r = await fetch(path);
+      if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 120)}`);
+      return r.json();
+    }
+    async function loadOverview() {
+      overview.value = null; overviewError.value = ''; detail.value = null; detailCode.value = null; impact.value = null; selGroup.value = '';
+      try { overview.value = await api('/graph/' + encodeURIComponent(repo.value)); }
+      catch (e) { overviewError.value = '구조 개요를 불러오지 못했습니다: ' + e.message; }
+    }
+    function onRepoChange() { flow.value = null; tab.value = 'overview'; nav.value = []; loadOverview(); }
+    function onGroupSelect(id) {
+      selGroup.value = id; impact.value = null;
+      const n = overview.value.nodes.find(x => x.id === id);
+      detail.value = { title: `${n.label} (${n.file})`, functions: n.functions, file: n.file }; detailCode.value = null; detailFold.value = false;
+    }
+
+    // ---- 구조 드릴다운: 전체 구조 → 묶음(클래스·모듈) → 함수 호출 흐름 ----
+    const nav = ref([]);           // [{type:'group'|'func', label, nodes?, edges?, entry?, error?}]
+    const navTop = computed(() => nav.value[nav.value.length - 1] || {});
+    function navTo(depth) { nav.value = nav.value.slice(0, depth); selSymbol.value = ''; detail.value = null; detailCode.value = null; impact.value = null; }
+    async function openGroup(id) {
+      const n = overview.value.nodes.find(x => x.id === id);
+      const lv = reactive({ type: 'group', id, label: n.label });
+      nav.value = [lv]; selSymbol.value = ''; detail.value = null; detailCode.value = null;
+      try {
+        const d = await api(`/group/${encodeURIComponent(repo.value)}?id=${encodeURIComponent(id)}`);
+        lv.nodes = d.nodes.map(x => ({ id: x.id, label: x.qualname, kind: x.kind,
+          sub: x.kind === 'external' ? `다른 묶음 · ${x.group}` : x.kind === 'unresolved' ? `확인 안 됨 · ${x.reason}` : `함수 · ${x.file}:${x.line}` }));
+        lv.edges = d.edges.map(e => ({ source: e.source, target: e.target, dashed: e.target.startsWith('?') }));
+        lv.byId = Object.fromEntries(d.nodes.map(x => [x.id, x]));
+      } catch (e) { lv.error = '불러오지 못했습니다: ' + e.message; }
+    }
+    async function openFunc(q) {
+      const lv = reactive({ type: 'func', label: q, entry: q });
+      const cut = nav.value.findIndex(x => x.type === 'func' && x.label === q);
+      nav.value = (cut >= 0 ? nav.value.slice(0, cut) : nav.value).concat([lv]);
+      onSymbolSelect(q);
+      try {
+        const d = await api(`/flows/${encodeURIComponent(repo.value)}?symbol=${encodeURIComponent(q)}&depth=3`);
+        const ids = new Map([[d.qualname, { id: d.qualname, label: d.qualname, sub: '시작 함수', kind: 'symbol' }]]);
+        d.pairs.forEach(([a, b]) => [a, b].forEach(x => ids.has(x) || ids.set(x, { id: x, label: x, sub: '', kind: 'symbol' })));
+        d.unresolved.forEach(u => ids.set('?' + u.caller + '|' + u.text, { id: '?' + u.caller + '|' + u.text, label: u.text, sub: '확인 안 됨 · ' + u.reason, kind: 'unresolved' }));
+        lv.entry = d.qualname;
+        lv.nodes = [...ids.values()];
+        lv.edges = [...d.pairs.map(([a, b]) => ({ source: a, target: b })),
+                    ...d.unresolved.map(u => ({ source: u.caller, target: '?' + u.caller + '|' + u.text, dashed: true }))];
+      } catch (e) { lv.error = '불러오지 못했습니다: ' + e.message; }
+    }
+    const qOf = id => { const t = navTop.value; return t.byId && t.byId[id] ? t.byId[id].qualname : id; };
+    function onNavSelect(id) { if (!id.startsWith('?')) { onSymbolSelect(qOf(id)); selSymbol.value = id; } }
+    function onNavOpen(id) { if (!id.startsWith('?')) openFunc(qOf(id)); }
+    const navNodes = computed(() => navTop.value.nodes || []);
+    const navEdges = computed(() => navTop.value.edges || []);
+
+    // ---- 호출 흐름 ----
+    const flowNodes = computed(() => {
+      if (!flow.value) return [];
+      const out = new Map();
+      const add = (id, extra = {}) => { if (!out.has(id)) out.set(id, { id, label: id, sub: id === flow.value.entry ? '시작 함수' : '', kind: 'symbol', ...extra }); };
+      (flow.value.entries || [flow.value.entry]).forEach(x => add(x, { sub: '시작 함수' }));
+      flow.value.pairs.forEach(([a, b]) => { add(a); add(b); });
+      flow.value.unresolved.forEach(u => { add(u.caller); add('?' + u.caller + '|' + u.text, { label: u.text, sub: u.reason, kind: 'unresolved' }); });
+      return [...out.values()];
+    });
+    const flowEdges = computed(() => flow.value ? [
+      ...flow.value.pairs.map(([a, b]) => ({ source: a, target: b })),
+      ...flow.value.unresolved.map(u => ({ source: u.caller, target: '?' + u.caller + '|' + u.text, dashed: true })),
+    ] : []);
+    const flowHighlight = computed(() => impact.value ? impact.value.affected.concat(impact.value.qualname) : []);
+    function onSymbolSelect(id) {
+      if (id.startsWith('?')) return;
+      selSymbol.value = id; impact.value = null;
+      detail.value = { title: '선택한 함수', symbol: id }; detailFold.value = false;
+      showDetailCode(id);          // 그래프에서 함수를 누르면 코드도 바로 아래에 연다
+    }
+    const detailCode = ref(null);
+    // ---- 코드 영역 크기: 경계선 드래그 + 크게 보기 ----
+    const leftEl = ref(null), dragging = ref(false), bigCode = ref(null);
+    const detailH = ref((() => { try { return Number(localStorage.getItem('recat_detail_h')) || 320; } catch { return 320; } })());
+    function startDrag(e) {
+      const y0 = e.clientY, h0 = detailH.value;
+      const maxH = () => (leftEl.value ? leftEl.value.clientHeight - 140 : 600);
+      dragging.value = true; document.body.classList.add('resizing');
+      const move = ev => { detailH.value = Math.max(120, Math.min(maxH(), h0 - (ev.clientY - y0))); };
+      const up = () => { dragging.value = false; document.body.classList.remove('resizing'); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+        try { localStorage.setItem('recat_detail_h', String(detailH.value)); } catch {} };
+      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+    }
+    // ---- 좌우 너비: 가운데 경계선 드래그 ----
+    const LW_KEY = 'recat_left_w';
+    const clampW = w => Math.max(340, Math.min(window.innerWidth - 380, w));
+    const leftW = ref((() => { try { const v = Number(localStorage.getItem(LW_KEY)); return v ? clampW(v) : 0; } catch { return 0; } })());
+    const hdragging = ref(false);
+    function startHDrag(e) {
+      const x0 = e.clientX, w0 = leftEl.value ? leftEl.value.getBoundingClientRect().width : window.innerWidth * 0.46;
+      hdragging.value = true; document.body.classList.add('resizing');
+      const move = ev => { leftW.value = clampW(w0 + ev.clientX - x0); };
+      const up = () => { hdragging.value = false; document.body.classList.remove('resizing');
+        window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+        try { localStorage.setItem(LW_KEY, String(leftW.value)); } catch {} };
+      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+    }
+    function resetLeftW() { leftW.value = 0; try { localStorage.removeItem(LW_KEY); } catch {} }
+    window.addEventListener('resize', () => { if (leftW.value) leftW.value = clampW(leftW.value); });
+    const detailFold = ref(false);
+    function closeDetail() { detail.value = null; detailCode.value = null; impact.value = null; selGroup.value = ''; selSymbol.value = ''; }
+    // Esc: 크게 보기 창이 열려 있으면 그것만, 아니면 아래 상세 영역을 닫는다
+    window.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      if (bigCode.value) { bigCode.value = null; return; }
+      if (detail.value && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) closeDetail();
+    });
+    async function fetchSource(q) {
+      try { return await api(`/source/${encodeURIComponent(repo.value)}?symbol=${encodeURIComponent(q)}`); }
+      catch (e) { return { error: '코드를 가져오지 못했습니다: ' + e.message, start_line: 0, file: '' }; }
+    }
+    async function showDetailCode(q) { detailCode.value = { q, ...(await fetchSource(q)) }; }
+    async function loadFile({ symbol = '', path = '' }) {
+      try { return await api(`/file/${encodeURIComponent(repo.value)}?symbol=${encodeURIComponent(symbol)}&path=${encodeURIComponent(path)}`); }
+      catch (e) { return { error: '파일을 가져오지 못했습니다: ' + e.message }; }
+    }
+    provide('loadFile', loadFile);
+    async function showFile(path) {          // 클래스·모듈을 골랐을 때 그 파일 전체를 연다
+      const d = await loadFile({ path });
+      detailCode.value = d.error ? { file: path, error: d.error } : { file: path, source: d.source, start_line: 1, full: d, showFull: true };
+    }
+    async function toggleCode(item, q) {
+      if (item.code[q]) { delete item.code[q]; return; }
+      item.code[q] = { q, ...(await fetchSource(q)) };
+    }
+    async function showImpact(symbol) {
+      try { impact.value = await api(`/callers/${encodeURIComponent(repo.value)}?symbol=${encodeURIComponent(symbol)}&depth=3`); }
+      catch (e) { error.value = '영향 범위를 가져오지 못했습니다: ' + e.message; }
+    }
+
+    // ---- 대화 ----
+    fetch('/health').then(r => r.json()).then(h => {
+      backendLabel.value = `${h.llm_backend} · ${h.quality_llm} · 탐색 ${h.explore_mode}`;
+    }).catch(() => {});
+    fetch('/repos').then(r => r.json()).then(d => {
+      repos.value = d.repos;
+      if (d.repos.length) { repo.value = d.repos[0].repo; loadOverview(); }
+    }).catch(() => { overviewError.value = '서버에 연결하지 못했습니다 (server.py가 8100에 떠 있어야 합니다).'; });
+
+    async function scrollToBottom() { await nextTick(); if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight; }
+
+    function ask(text) { input.value = text; onSubmit(); }
+
+    function onSubmit() {
+      const text = input.value.trim();
+      if (!text || sending.value) return;
+      showGuide.value = false; error.value = '';
+      log.value.push({ id: nextId++, kind: 'user', text });
+      input.value = ''; sending.value = true; scrollToBottom();
+      const stepsItem = reactive({ id: nextId++, kind: 'steps', steps: [], done: false, open: false, summary: '' });
+      log.value.push(stepsItem);
+
+      const url = `/chat/stream?message=${encodeURIComponent(text)}&thread_id=${encodeURIComponent(thread)}&repo=${encodeURIComponent(repo.value)}`;
+      const es = new EventSource(url);
+      let attempts = 0;
+      es.onmessage = (event) => {
+        if (event.data === '[DONE]') { es.close(); sending.value = false; stepsItem.done = true; return; }
+        let e; try { e = JSON.parse(event.data); } catch { return; }
+        if (e.type === 'AnswerToken') return;     // 검증 끝난 최종 응답만 FinalAnswer로 한 번에 그린다
+        if (e.type === 'Explained') attempts = e.attempt;
+        if (e.type === 'Error') {           // 서버가 처리 중 오류를 알려 줌(연결이 그냥 끊기던 문제 수정)
+          stepsItem.done = true; stepsItem.summary = '오류'; error.value = e.message; return;
+        }
+        if (e.type === 'FinalAnswer') {
+          const v = e.verification ? { ok: e.verification.ok, verified: e.verification.verified,
+            unverifiable: e.verification.unverifiable, errors: e.verification.hallucinated + e.verification.wrong, attempts } : null;
+          const blocks = parseAnswer(e.reply);
+          log.value.push(reactive({ id: nextId++, kind: 'answer', blocks, ...arrange(blocks, e.structure), v,
+                                    symbols: e.symbols || [], suggestions: e.suggestions || [], code: {} }));
+          stepsItem.done = true;
+          stepsItem.summary = v ? (v.ok ? '검증 통과' : '검증 실패') + (v.attempts > 1 ? ` · 재설명 ${v.attempts - 1}회` : '') : '';
+          if (e.structure) {
+            flow.value = { entry: e.structure.entry, pairs: e.structure.pairs, unresolved: e.structure.unresolved || [],
+                           entries: e.structure.entries, scope: e.structure.scope };
+            tab.value = 'flow'; impact.value = null; selSymbol.value = ''; detail.value = null; detailCode.value = null;
+          }
+          scrollToBottom(); return;
+        }
+        const fn = STEP_LABELS[e.type]; if (!fn) return;
+        const label = fn(e); if (!label) return;
+        stepsItem.steps.push(label); scrollToBottom();
+      };
+      es.onerror = () => { es.close(); sending.value = false; stepsItem.done = true; error.value = '연결이 끊겼습니다. 서버 상태와 API 키를 확인하세요.'; };
+    }
+
+    return { backendLabel, repos, repo, log, input, sending, showGuide, error, logEl, tab, overview, overviewError, flow,
+      selGroup, selSymbol, detail, impact, examples, currentSensitive, ovNodes, ovEdges, ovHighlight, flowNodes, flowEdges,
+      flowHighlight, onRepoChange, onGroupSelect, onSymbolSelect, showImpact, ask, onSubmit, detailCode, showDetailCode, toggleCode, showFile, closeDetail, leftW, hdragging, startHDrag, resetLeftW, detailFold, leftEl, dragging, bigCode, detailH, startDrag, nav, navTop, navTo, openGroup, openFunc, onNavSelect, onNavOpen, navNodes, navEdges };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

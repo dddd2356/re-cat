@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Re-cat 관리자</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--sunk:#eef0f4;--line:#dfe3ea;--line2:#c9cfda;--ink:#1b2230;--ink2:#4a5468;--ink3:#7b8598;
+ --accent:#2a5bd7;--accent-bg:#e8eefc;--ok:#14804a;--ok-bg:#e3f5ea;--warn:#a15c00;--warn-bg:#fdf1db;--bad:#b3261e;--bad-bg:#fbe5e3;
+ --font:'IBM Plex Sans KR',system-ui,-apple-system,'Segoe UI','Noto Sans KR',sans-serif;--mono:'IBM Plex Mono',ui-monospace,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#0f131b;--panel:#171c26;--sunk:#1e2430;--line:#2a3242;--line2:#3a4458;--ink:#e6e9f0;--ink2:#a9b2c3;--ink3:#7d889c;
+ --accent:#7ba2ff;--accent-bg:#1d2a4a;--ok:#5fd09a;--ok-bg:#15301f;--warn:#f0b35a;--warn-bg:#35280f;--bad:#ff8d85;--bad-bg:#3b1a18}}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.55 var(--font)}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px max(16px,env(safe-area-inset-left));background:var(--panel);border-bottom:1px solid var(--line)}
+header b{font-size:16px;font-weight:600}header small{color:var(--ink3)}.spacer{flex:1}
+a{color:var(--accent);text-decoration:none}
+button{font:inherit;cursor:pointer}
+.ghost{border:1px solid var(--line2);background:var(--panel);color:var(--ink);border-radius:8px;padding:5px 11px}
+.btn{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:6px 13px;font-weight:500}.btn:disabled{opacity:.5}
+main{padding:14px max(16px,env(safe-area-inset-left)) 28px;display:grid;gap:14px}
+.stack{display:grid;gap:14px}
+.seg{display:inline-flex;background:var(--sunk);border-radius:8px;padding:2px;gap:2px;justify-self:start}
+.seg button{border:0;background:transparent;padding:5px 13px;border-radius:6px;color:var(--ink2)}
+.seg button.on{background:var(--panel);color:var(--ink);font-weight:500;box-shadow:0 1px 2px rgba(20,30,50,.08)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.card,.box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.card .k{font-size:12px;color:var(--ink3)}.card .v{font-size:26px;font-weight:600;letter-spacing:-.02em}.card .s{font-size:11.5px;color:var(--ink3)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+h3{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--ink2)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:13px}.kv>div:nth-child(odd){color:var(--ink3)}
+code{font-family:var(--mono);font-size:12.5px}
+.bar{display:grid;grid-template-columns:110px 1fr 36px;gap:8px;align-items:center;margin:5px 0;font-size:12.5px}
+.track{height:10px;background:var(--sunk);border-radius:5px;overflow:hidden}.fill{height:100%;background:var(--accent);border-radius:5px}.bar .n{text-align:right}
+.note{font-size:12px;color:var(--ink3);margin-top:8px}.okn{color:var(--ok)}.warnn{color:var(--warn);background:var(--warn-bg);padding:6px 10px;border-radius:6px}
+.err{color:var(--bad);background:var(--bad-bg);padding:7px 10px;border-radius:6px;margin:8px 0}
+.pill{display:inline-block;font-size:12px;padding:1px 9px;border-radius:99px;background:var(--sunk);color:var(--ink2)}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.tw{overflow:auto}table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}th{font-weight:500;color:var(--ink3);font-size:12px}
+.n{text-align:right;font-variant-numeric:tabular-nums}
+.login{max-width:440px;margin:72px auto}.login h2{margin:0 0 8px}.login p{color:var(--ink2);font-size:13px}
+.login{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px 24px 20px}
+.login input{width:100%;margin:12px 0 10px}
+.login .btn{width:100%;padding:10px}
+.reg{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+input[type=text],input[type=password],select{border:1px solid var(--line2);background:var(--bg);color:var(--ink);border-radius:8px;padding:8px 11px;font:inherit;outline:none}
+input[type=text]:focus,input[type=password]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:15px;height:15px;vertical-align:-2px;margin:0 6px 0 0}
+.filebtn{display:inline-flex;align-items:center;gap:8px;border:1px dashed var(--line2);background:var(--bg);color:var(--ink);border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px}
+.filebtn:hover{border-color:var(--accent);color:var(--accent)}
+.filebtn input{display:none}
+.fname{font-size:12.5px;color:var(--ink3)}
+.fname.has{color:var(--ink)}
+.form{display:grid;grid-template-columns:110px 1fr;gap:12px 16px;align-items:center;margin-top:6px}
+.form .lab{font-size:12.5px;color:var(--ink3)}
+.form .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.seg2{display:inline-flex;background:var(--sunk);border-radius:8px;padding:2px;gap:2px}
+.seg2 button{border:0;background:transparent;padding:5px 12px;border-radius:6px;color:var(--ink2);font-size:13px}
+.seg2 button.on{background:var(--panel);color:var(--ink);font-weight:500;box-shadow:0 1px 2px rgba(20,30,50,.08)}
+.btn.lg{padding:9px 18px}.reg select{min-width:200px}.chk{font-size:13px;color:var(--ink2)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><b>Re-cat 관리자</b><small>운영 현황 · 보안 정책 · 감사 로그 · 실험 결과</small><div class="spacer"></div>
+    <a href="/">← 사용자 화면</a>
+    <button v-if="data" class="ghost" @click="load">새로고침</button>
+    <button v-if="key" class="ghost" @click="logout">로그아웃</button></header>
+
+  <div v-if="!data" class="login">
+    <h2>관리자 로그인</h2>
+    <p>관리자 키(RECAT_ADMIN_KEY)가 필요합니다. 일반 사용자 키로는 열리지 않고, 서버에 관리자 키가 설정되어 있지 않으면 관리자 기능은 닫힌 상태로 유지됩니다.</p>
+    <input type="password" v-model="keyInput" placeholder="관리자 키" autocomplete="current-password" @keyup.enter="login" />
+    <button class="btn" @click="login">로그인</button>
+    <div class="err" v-if="error">{{ error }}</div>
+  </div>
+
+  <main v-else>
+    <div class="seg" role="tablist"><button :class="{on: tab === 'status'}" @click="tab = 'status'">현황</button><button :class="{on: tab === 'repos'}" @click="openRepos">저장소 관리</button></div>
+    <div v-show="tab==='status'" class="stack">
+    <div class="cards">
+      <div class="card"><div class="k">전체 요청</div><div class="v">{{ s.total_requests }}</div><div class="s">채팅 {{ s.chats }}건</div></div>
+      <div class="card"><div class="k">재설명이 필요했던 질문</div><div class="v">{{ s.retried }}</div><div class="s">검증이 한 번 이상 반려</div></div>
+      <div class="card"><div class="k">LLM 없는 출력으로 대체</div><div class="v">{{ s.fallbacks }}</div><div class="s">검증을 끝내 통과 못 함</div></div>
+      <div class="card"><div class="k">검증이 잡은 오류 주장</div><div class="v">{{ s.caught_errors }}</div><div class="s">재설명 전 시도에서 반려된 없는 이름·틀린 관계</div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="box"><h3>처리 경로 · 모드</h3>
+        <div v-if="!Object.keys(s.by_decision).length && !Object.keys(s.by_mode).length" class="note">아직 채팅 기록이 없습니다.</div>
+        <div class="bar" v-for="(n, k) in s.by_decision" :key="'d'+k"><div class="lab">경로 {{ k }}</div><div class="track"><div class="fill" :style="{ width: pct(n, s.chats) }"></div></div><div class="n">{{ n }}</div></div>
+        <div class="bar" v-for="(n, k) in s.by_mode" :key="'m'+k"><div class="lab">{{ k }}</div><div class="track"><div class="fill" style="background:#5a9bd8" :style="{ width: pct(n, s.chats) }"></div></div><div class="n">{{ n }}</div></div>
+        <div class="note">경로 local = 외부 전송 없음. 설정상 cloud는 정책·확인서·민감 여부를 모두 통과해야 합니다.</div></div>
+      <div class="box"><h3>저장소별 요청</h3>
+        <div v-if="!Object.keys(s.by_repo).length" class="note">아직 기록이 없습니다.</div>
+        <div class="bar" v-for="(n, k) in s.by_repo" :key="k"><div class="lab">{{ k }}</div><div class="track"><div class="fill" :style="{ width: pct(n, s.chats) }"></div></div><div class="n">{{ n }}</div></div>
+        <div class="note">이벤트별: <span v-for="(n, k) in s.by_event" :key="k" class="pill na" style="margin-right:4px">{{ k }} {{ n }}</span></div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="box"><h3>보안 정책 (policy.yaml + 등록 저장소)</h3>
+        <div class="kv">
+          <div>클라우드 전송</div><div><span class="pill" :class="p.cloud_enabled ? 'warn' : 'ok'">{{ p.cloud_enabled ? '허용됨' : '차단 (기본)' }}</span></div>
+          <div>허용 엔드포인트</div><div><code v-for="e in p.allowed_endpoints" :key="e">{{ e }} </code><span v-if="!p.allowed_endpoints.length">없음</span></div>
+          <div>전송 확인서 필수</div><div>{{ p.require_attestation ? '예' : '아니오' }}</div>
+          <div>코드 마스킹 필수</div><div>{{ p.require_masking ? '예' : '아니오' }}</div>
+          <div>함수당 코드 상한</div><div>{{ p.max_snippet_chars }}자</div>
+          <div>탐색 상한</div><div>도구 {{ p.max_tool_calls }}회 · 깊이 {{ p.max_depth }} · 재설명 {{ p.max_explain_retries }}회</div>
+          <div>허용 저장소</div><div><span v-for="r in p.repos" :key="r.repo" class="pill" :class="r.sensitive ? 'warn' : 'na'" style="margin:0 4px 4px 0">{{ r.repo }}{{ r.sensitive ? ' 🔒민감' : '' }}</span></div>
+        </div>
+        <div class="note">민감 저장소는 클라우드 전송과 LangSmith 추적이 항상 차단됩니다. 감사 로그에는 코드 본문이 저장되지 않습니다.</div></div>
+      <div class="box"><h3>서버 · 추적(LangSmith)</h3>
+        <div class="kv">
+          <div>LLM 백엔드</div><div>{{ h.llm_backend }} <span class="pill na">{{ h.fast_llm }}</span> <span class="pill na">{{ h.quality_llm }}</span></div>
+          <div>탐색 방식</div><div>{{ h.explore_mode }}</div>
+          <div>Agent 번들 생성 횟수</div><div>{{ h.creation_count }} <span class="pill" :class="h.creation_count === 1 ? 'ok' : 'bad'">{{ h.creation_count === 1 ? '정상(1)' : '확인 필요' }}</span></div>
+          <div>LangSmith 추적</div><div><span class="pill" :class="t.langsmith_enabled_by_policy ? 'ok' : 'na'">{{ t.langsmith_enabled_by_policy ? '정책상 켜짐' : '정책상 꺼짐' }}</span></div>
+          <div>추적 서버</div><div><code>{{ t.endpoint }}</code> <span class="pill" :class="t.endpoint_internal ? 'ok' : 'warn'">{{ t.endpoint_internal ? '사내(자체 호스팅)' : '클라우드' }}</span></div>
+          <div>민감 저장소</div><div>{{ tr(t.decision_sensitive) }}</div>
+          <div>일반 저장소</div><div>{{ tr(t.decision_normal) }}</div>
+          <div>입출력 숨김</div><div>{{ t.hide_inputs_outputs ? '예' : '아니오' }}</div>
+          <div>API 키</div><div><span class="pill" :class="t.api_key_present ? 'ok' : 'na'">{{ t.api_key_present ? '있음' : '없음 (추적·피드백 안 함)' }}</span></div>
+          <div>검증 피드백</div><div>보냄 {{ t.feedback.sent }} · 실패 {{ t.feedback.failed }} <span class="pill na">숫자 점수만</span></div>
+          <div>실험 업로드</div><div><span v-if="!t.uploads.length" class="pill na">아직 없음</span><span v-for="u in t.uploads" :key="u.when" class="pill ok" style="margin:0 4px 4px 0">{{ u.when }} · {{ u.experiments.join(', ') }}</span></div>
+        </div>
+        <div class="note">추적 허용은 추적 데이터가 저장되는 곳으로 정합니다. 사내 추적 서버(policy의 internal_endpoints)면 민감 저장소도 추적하고, 클라우드면 민감 저장소는 끄고 일반 저장소는 입출력을 숨긴 메타데이터만 보냅니다. 검증 결과(확인됨·없는 이름·틀린 관계·재설명 수)는 추적된 실행마다 숫자 피드백으로 붙고, eval 결과는 <code>python -m eval.run_eval --langsmith</code>로 데이터셋·실험에 올라갑니다(샘플 저장소만, fake 결과는 거부).</div></div>
+    </div>
+
+    <div class="box"><h3>비교 실험 결과 (tools/tools/eval/results)</h3>
+      <div v-if="!data.eval_results.length" class="note">실험 결과가 없습니다. <code>python -m eval.run_eval</code>로 생성합니다.</div>
+      <table v-else><thead><tr><th>실행</th><th>백엔드</th><th>질문</th><th>오류율 A 코드만</th><th>B 구조·검증 없음</th><th>C Re-cat</th><th>진입점 적중</th><th>폴백</th></tr></thead>
+        <tbody><tr v-for="r in data.eval_results" :key="r.file">
+          <td>{{ r.when }}<div v-if="r.demo_only"><span class="pill warn">fake — 수치 인용 금지</span></div></td>
+          <td>{{ r.backend }}<div class="note" style="margin:0">{{ r.models && r.models.quality }}</div></td><td>{{ r.questions }}</td>
+          <td>{{ er(r.summary.A) }}</td><td>{{ er(r.summary.B) }}</td><td>{{ er(r.summary.C) }}</td>
+          <td>{{ r.entry_hit_rate != null ? Math.round(r.entry_hit_rate * 100) + '%' : '-' }}</td><td>{{ r.fallback_rate != null ? Math.round(r.fallback_rate * 100) + '%' : '-' }}</td></tr></tbody></table>
+      <div class="note">오류율 = (없는 이름 + 틀린 관계) / 전체 주장. fake 백엔드의 B 오류율은 일부러 넣은 오류라서 환각률이 아닙니다. 실제 LLM 결과가 쌓이면 여기에 표시됩니다.</div></div>
+
+    <div class="box"><h3>최근 감사 로그 (메타데이터만, 최근 30건)</h3>
+      <table><thead><tr><th>시각</th><th>이벤트</th><th>저장소</th><th>경로</th><th>모드</th><th>시도</th><th>검증됨</th><th>없는 이름</th><th>틀린 관계</th><th>판정불가</th><th>추적</th></tr></thead>
+        <tbody><tr v-for="(e, i) in data.recent" :key="i"><td>{{ ts(e.ts) }}</td><td>{{ e.event }}</td><td>{{ e.repo }}</td><td>{{ e.decision || '' }}</td><td>{{ e.mode || '' }}</td>
+          <td>{{ e.attempts != null ? e.attempts : '' }}</td><td>{{ e.verified != null ? e.verified : '' }}</td><td>{{ e.hallucinated || '' }}</td><td>{{ e.wrong || '' }}</td><td>{{ e.unverifiable || '' }}</td><td><a v-if="e.run_url" :href="e.run_url" target="_blank" rel="noopener">LangSmith</a><code v-else-if="e.run_id" :title="e.run_id">{{ e.run_id.slice(0, 8) }}</code><span v-else>-</span></td></tr></tbody></table></div>
+  </div>
+    <div v-show="tab==='repos'" class="stack">
+      <div class="box"><h3>저장소</h3>
+        <div v-if="repoError" class="err">{{ repoError }}</div>
+        <div class="tw"><table><thead><tr><th>저장소</th><th>출처</th><th>보호</th><th class="n">함수</th><th class="n">호출</th><th class="n">확인 안 됨</th><th class="n">문서 절</th><th>마지막 분석</th><th></th></tr></thead>
+          <tbody><tr v-for="r in repos.repos" :key="r.repo">
+            <td><b>{{ r.repo }}</b></td>
+            <td><span class="pill">{{ r.source === 'policy' ? 'policy.yaml' : r.source === 'upload' ? 'zip 업로드' : '관리자 등록' }}</span></td>
+            <td><span class="pill" :class="r.sensitive ? 'warn' : 'ok'">{{ r.sensitive ? '민감 · 클라우드 차단' : '일반' }}</span></td>
+            <td class="n">{{ r.function_count }}</td><td class="n">{{ r.edge_count }}</td><td class="n">{{ r.unresolved }}</td><td class="n" :title="r.doc_files + '개 파일'">{{ r.doc_sections }}</td>
+            <td>{{ r.analyzed_at ? ts(r.analyzed_at) : '-' }}</td>
+            <td><button class="btn" :disabled="busy === r.repo" @click="reanalyze(r.repo)">{{ busy === r.repo ? '분석 중…' : '재분석' }}</button>
+              <button class="ghost" style="margin-left:6px" @click="openDocs(r.repo)">문서</button>
+              <button v-if="r.source !== 'policy'" class="ghost" :disabled="!!busy || uploading" @click="deleteRepo(r.repo)">삭제</button></td>
+          </tr></tbody></table></div>
+        <div v-if="lastRe" class="note okn">{{ lastRe.repo }} 재분석 완료 — 함수 {{ lastRe.before == null ? '-' : lastRe.before }} → {{ lastRe.after }}</div>
+        <div class="note">재분석은 호출 그래프와 문서 색인(저장소 안 md·txt·rst)을 새로 만들고, 저장소 파일은 바꾸지 않습니다. 코드가 바뀐 뒤에 눌러 주세요.</div></div>
+      <div class="box" v-if="docs"><h3>{{ docs.repo }} 문서</h3>
+        <div class="note" style="margin-top:0">저장소 안의 md·txt·rst 문서는 자동으로 색인됩니다. 여기서는 저장소에 없는 문서(기획서, API 명세 등)를 따로 올립니다. 코드 폴더는 바뀌지 않습니다.</div>
+        <div class="tw" v-if="docs.uploaded.length"><table><thead><tr><th>올린 문서</th><th class="n">크기</th><th></th></tr></thead><tbody>
+          <tr v-for="f in docs.uploaded" :key="f.name"><td>{{ f.name }}</td><td class="n">{{ (f.bytes / 1024).toFixed(1) }} KB</td>
+            <td><button class="ghost" @click="deleteDoc(f.name)">삭제</button></td></tr></tbody></table></div>
+        <div v-else class="note">아직 올린 문서가 없습니다.</div>
+        <form class="reg" style="margin-top:10px" @submit.prevent="uploadDocs">
+          <label class="filebtn"><input type="file" multiple accept=".md,.markdown,.txt,.rst" @change="e => docFiles = [...e.target.files]" aria-label="문서 파일">문서 선택</label>
+          <span class="fname" :class="{has: docFiles.length}">{{ docFiles.length ? docFiles.map(f => f.name).join(', ') : '선택된 문서 없음' }}</span>
+          <button class="btn" :disabled="!docFiles.length || uploading">문서 올리기</button>
+          <button type="button" class="ghost" @click="docs = null">닫기</button>
+        </form>
+        <div class="note">md·txt·rst(UTF-8)만, 파일 2MB · 합계 20MB까지. 올리면 바로 문서 검색과 문서-코드 대조에 반영됩니다.</div></div>
+      <div class="box"><h3>저장소 올리기</h3>
+        <div class="form">
+          <div class="lab">저장소 이름</div>
+          <div class="row"><input type="text" v-model="upName" placeholder="예: my-service (영문·숫자·_ . -)" aria-label="저장소 이름" style="width:280px"></div>
+          <div class="lab">올릴 방식</div>
+          <div class="row"><div class="seg2"><button type="button" :class="{on: upMode === 'zip'}" @click="upMode = 'zip'">zip 파일</button><button type="button" :class="{on: upMode === 'folder'}" @click="upMode = 'folder'">폴더</button></div></div>
+          <div class="lab">{{ upMode === 'zip' ? 'zip 파일' : '폴더' }}</div>
+          <div class="row">
+            <label class="filebtn" v-if="upMode === 'zip'"><input type="file" accept=".zip" @change="e => upFile = e.target.files[0] || null" aria-label="zip 파일">zip 파일 선택</label>
+            <label class="filebtn" v-else><input type="file" webkitdirectory directory multiple @change="e => upFolder = [...e.target.files]" aria-label="폴더">폴더 선택</label>
+            <span class="fname" :class="{has: upMode === 'zip' ? upFile : upFolder.length}">{{ upMode === 'zip' ? (upFile ? upFile.name + ' · ' + (upFile.size / 1048576).toFixed(1) + 'MB' : '선택된 파일 없음') : (upFolder.length ? (upFolder[0].webkitRelativePath || '').split('/')[0] + ' · 파일 ' + upFolder.length + '개' : '선택된 폴더 없음') }}</span>
+          </div>
+          <div class="lab">옵션</div>
+          <div class="row">
+            <label class="chk"><input type="checkbox" v-model="upSensitive">민감 저장소 (클라우드·추적 차단)</label>
+            <label class="chk"><input type="checkbox" v-model="upReplace">같은 이름 교체 (업로드로 등록한 저장소만)</label>
+          </div>
+          <div></div>
+          <div class="row"><button class="btn lg" :disabled="!upName || (upMode === 'zip' ? !upFile : !upFolder.length) || uploading" @click="upMode === 'zip' ? upload() : uploadFolder()">{{ uploading ? '올리는 중…' : '올리기' }}</button></div>
+        </div>
+        <div v-if="!upSensitive" class="note warnn">민감 해제는 이 저장소의 코드가 설정에 따라 외부 모델로 갈 수 있게 합니다. 클라우드가 정책으로 꺼져 있으면 영향이 없습니다.</div>
+        <div v-if="upResult" class="note okn">{{ upResult }}</div>
+        <div class="note">프로젝트를 통째로 올리면 전체를 분석합니다. 최상위 폴더 하나는 자동으로 벗기고, .git·node_modules·빌드 산출물은 건너뜁니다. 경로 이탈(../)·링크·압축 폭탄은 거부하며, 상한은 zip 50MB · 압축 해제 300MB · 파일 2만 개입니다. 코드는 실행하지 않고 읽기만 합니다.</div></div>
+      <div class="box"><h3>서버 폴더에서 등록</h3>
+        <div v-if="!repos.candidates.length" class="note">등록할 수 있는 폴더가 없습니다. 서버의 <code>var/data/repos/</code> 아래에 코드를 배치하면 여기에 나타납니다.</div>
+        <form v-else class="reg" @submit.prevent="register">
+          <select v-model="newRepo" aria-label="등록할 폴더"><option value="" disabled>폴더 선택</option><option v-for="c in repos.candidates" :key="c" :value="c">{{ c }}</option></select>
+          <label class="chk"><input type="checkbox" v-model="newSensitive"> 민감 저장소 (클라우드·LangSmith 차단)</label>
+          <button class="btn" :disabled="!newRepo">등록</button>
+        </form>
+        <div v-if="!newSensitive && repos.candidates.length" class="note warnn">민감 해제는 이 저장소의 코드가 설정에 따라 외부 모델로 갈 수 있게 합니다. 클라우드가 정책으로 꺼져 있으면 영향이 없습니다.</div>
+        <div class="note">후보는 서버의 <code>var/data/repos/</code> 바로 아래 폴더뿐입니다. 관리자 등록·업로드 저장소는 이름을 다시 입력해 삭제할 수 있습니다. policy.yaml 기본 저장소는 삭제할 수 없습니다.</div></div>
+    </div>
+  </main>
+</div>
+<script src="/vendor/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, computed } = Vue;
+createApp({
+  setup() {
+    const key = ref(''); try { key.value = sessionStorage.getItem('recat_admin_key') || ''; } catch {}
+    const keyInput = ref(''); const data = ref(null); const error = ref('');
+    const upMode = ref('zip'), upFolder = ref([]), docs = ref(null), docFiles = ref([]);
+    const upName = ref(''), upFile = ref(null), upSensitive = ref(true), upReplace = ref(false), uploading = ref(false), upResult = ref('');
+    const tab = ref('status'), repos = ref({ repos: [], candidates: [] }), repoError = ref(''), busy = ref(''), lastRe = ref(null), newRepo = ref(''), newSensitive = ref(true);
+    const s = computed(() => data.value.stats), p = computed(() => data.value.policy),
+          h = computed(() => data.value.health), t = computed(() => data.value.tracing);
+    async function load() {
+      error.value = '';
+      try {
+        const r = await fetch('/admin/summary', { headers: { Authorization: 'Bearer ' + key.value } });
+        if (r.status === 401) throw new Error('관리자 키가 올바르지 않습니다.');
+        if (r.status === 403) throw new Error('서버에 관리자 키가 설정되어 있지 않아 관리자 기능이 닫혀 있습니다 (RECAT_ADMIN_KEY).');
+        if (!r.ok) throw new Error('요청 실패: ' + r.status);
+        data.value = await r.json();
+      } catch (e) { data.value = null; error.value = e.message; }
+    }
+    function login() { key.value = keyInput.value.trim(); try { sessionStorage.setItem('recat_admin_key', key.value); } catch {} load(); }
+    function logout() { key.value = ''; data.value = null; try { sessionStorage.removeItem('recat_admin_key'); } catch {} }
+    const pct = (n, total) => (total ? Math.round(n / total * 100) : 0) + '%';
+    const er = x => !x || x.error_rate == null ? '-' : (x.error_rate * 100).toFixed(1) + '% (' + (x.hallucinated + x.wrong) + '/' + x.claims + ')';
+    const tr = d => ({ policy_off: '추적 안 함 (정책 꺼짐)', internal_endpoint: '추적함 (사내 서버, 데이터가 회사 밖으로 안 나감)', sensitive_on_cloud: '추적 안 함 (클라우드에는 민감 코드를 보내지 않음)', cloud_requires_hidden_io: '추적 안 함 (클라우드는 입출력 숨김이 필수)', cloud_metadata_only: '추적함 (클라우드, 메타데이터만)' })[d] || d || '-';
+    const ts = v => new Date(v * 1000).toLocaleString('ko-KR', { hour12: false });
+    const H = () => ({ Authorization: 'Bearer ' + key.value, 'Content-Type': 'application/json' });
+    async function call(url, opt = {}) {
+      repoError.value = '';
+      const r = await fetch(url, { headers: H(), ...opt });
+      if (!r.ok) { let d = ''; try { d = (await r.json()).detail || ''; } catch {} throw new Error(r.status === 401 ? '관리자 키가 올바르지 않습니다.' : '요청 실패 (' + r.status + ') ' + d); }
+      return r.json();
+    }
+    async function loadRepos() { try { repos.value = await call('/admin/repos'); } catch (e) { repoError.value = e.message; } }
+    function openRepos() { tab.value = 'repos'; loadRepos(); }
+    async function reanalyze(name) {
+      busy.value = name; lastRe.value = null;
+      try { const r = await call('/admin/repos/' + encodeURIComponent(name) + '/reanalyze', { method: 'POST' });
+            lastRe.value = { repo: name, before: r.before && r.before.function_count, after: r.after.function_count }; await loadRepos(); await load(); }
+      catch (e) { repoError.value = e.message; } finally { busy.value = ''; }
+    }
+    async function upload() {
+      uploading.value = true; upResult.value = ''; repoError.value = '';
+      try {
+        const fd = new FormData();
+        fd.append('file', upFile.value); fd.append('repo', upName.value.trim());
+        fd.append('sensitive', upSensitive.value ? 'true' : 'false'); fd.append('replace', upReplace.value ? 'true' : 'false');
+        const r = await fetch('/admin/repos/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + key.value }, body: fd });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(r.status === 401 ? '관리자 키가 올바르지 않습니다.' : (d.detail || ('요청 실패 (' + r.status + ')')));
+        upResult.value = `${d.repo} 올림 — 파일 ${d.uploaded_files}개, 함수 ${d.function_count}개, 문서 절 ${d.doc_sections}개${d.sensitive ? ' · 민감' : ''}`;
+        upName.value = ''; upFile.value = null; upFolder.value = []; upReplace.value = false; await loadRepos(); await load();
+      } catch (e) { repoError.value = e.message; } finally { uploading.value = false; }
+    }
+    async function postForm(url, fd) {
+      const r = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + key.value }, body: fd });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(r.status === 401 ? '관리자 키가 올바르지 않습니다.' : (d.detail || ('요청 실패 (' + r.status + ')')));
+      return d;
+    }
+    async function uploadFolder() {
+      uploading.value = true; upResult.value = ''; repoError.value = '';
+      try {
+        const fd = new FormData();
+        upFolder.value.forEach(f => fd.append('files', f, f.webkitRelativePath || f.name));   // 상대 경로를 파일 이름으로 보낸다
+        fd.append('repo', upName.value.trim()); fd.append('sensitive', upSensitive.value ? 'true' : 'false'); fd.append('replace', upReplace.value ? 'true' : 'false');
+        const d = await postForm('/admin/repos/upload-folder', fd);
+        upResult.value = `${d.repo} 올림 — 파일 ${d.uploaded_files}개, 함수 ${d.function_count}개, 문서 절 ${d.doc_sections}개${d.sensitive ? ' · 민감' : ''}`;
+        upName.value = ''; upFolder.value = []; await loadRepos(); await load();
+      } catch (e) { repoError.value = e.message; } finally { uploading.value = false; }
+    }
+    async function openDocs(name) { try { docs.value = await call('/admin/repos/' + encodeURIComponent(name) + '/docs'); docFiles.value = []; } catch (e) { repoError.value = e.message; } }
+    async function uploadDocs() {
+      uploading.value = true; repoError.value = '';
+      try {
+        const fd = new FormData(); docFiles.value.forEach(f => fd.append('files', f, f.name));
+        const d = await postForm('/admin/repos/' + encodeURIComponent(docs.value.repo) + '/docs', fd);
+        upResult.value = `${d.repo} 문서 ${d.uploaded_docs.length}개 올림 — 문서 절 ${d.doc_sections}개`;
+        docFiles.value = []; await openDocs(docs.value.repo); await loadRepos();
+      } catch (e) { repoError.value = e.message; } finally { uploading.value = false; }
+    }
+    async function deleteRepo(name) {
+      const entered = window.prompt(`${name}의 코드·문서·대화 이력을 삭제합니다. 저장소 이름을 다시 입력하세요.`);
+      if (entered === null) return;
+      if (entered !== name) { repoError.value = '저장소 이름이 일치하지 않습니다.'; return; }
+      busy.value = name;
+      try {
+        await call('/admin/repos/' + encodeURIComponent(name), { method: 'DELETE', body: JSON.stringify({ confirm_name: entered }) });
+        if (docs.value && docs.value.repo === name) docs.value = null;
+        lastRe.value = null;
+        await loadRepos(); await load();
+      } catch (e) { repoError.value = e.message; } finally { busy.value = ''; }
+    }
+    async function deleteDoc(name) {
+      try { await call('/admin/repos/' + encodeURIComponent(docs.value.repo) + '/docs/' + encodeURIComponent(name), { method: 'DELETE' });
+            await openDocs(docs.value.repo); await loadRepos(); } catch (e) { repoError.value = e.message; }
+    }
+    async function register() {
+      try { await call('/admin/repos', { method: 'POST', body: JSON.stringify({ repo: newRepo.value, sensitive: newSensitive.value }) });
+            newRepo.value = ''; newSensitive.value = true; await loadRepos(); await load(); }
+      catch (e) { repoError.value = e.message; }
+    }
+    if (key.value) load();
+    return { key, keyInput, data, error, s, p, h, t, load, login, logout, pct, er, ts, tr, tab, repos, repoError, busy, lastRe, newRepo, newSensitive, loadRepos, openRepos, reanalyze, register, upName, upFile, upSensitive, upReplace, uploading, upResult, upload, upMode, upFolder, uploadFolder, docs, docFiles, openDocs, uploadDocs, deleteDoc, deleteRepo };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
