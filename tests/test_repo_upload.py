@@ -51,6 +51,15 @@ def test_symlink_rejected(tmp_path):
         extract_repo(_zip(tmp_path, [("ok.py", PY), ("link.py", info)]), "svc", root)
 
 
+def test_symlink_in_skipped_dependency_directory_is_ignored(tmp_path):
+    root = tmp_path / "repos"; root.mkdir()
+    info = zipfile.ZipInfo("node_modules/pkg/link.js")
+    info.external_attr = (stat.S_IFLNK | 0o777) << 16
+    extract_repo(_zip(tmp_path, [("app.py", PY), ("node_modules/pkg/link.js", info)]), "svc", root)
+    assert (root / "svc" / "app.py").exists()
+    assert not (root / "svc" / "node_modules").exists()
+
+
 def test_bomb_and_count_limits(tmp_path):
     root = tmp_path / "repos"; root.mkdir()
     big = _zip(tmp_path, [("big.txt", "0" * (3 * 1024 * 1024))], "big.zip")     # 3MB가 수 KB로 압축됨
@@ -64,6 +73,27 @@ def test_bomb_and_count_limits(tmp_path):
         extract_repo(tmp_path / "x.zip", "svc", root)
     with pytest.raises(UploadRejected, match="이름"):
         extract_repo(_zip(tmp_path, [("a.py", PY)], "n.zip"), "../x", root)
+
+
+def test_upload_limits_are_configurable_but_capped(monkeypatch):
+    monkeypatch.setenv("RECAT_UPLOAD_MAX_ZIP_MB", "400")
+    monkeypatch.setenv("RECAT_UPLOAD_MAX_TOTAL_MB", "99999")
+    monkeypatch.setenv("RECAT_UPLOAD_MAX_FILE_MB", "bad-value")
+    lim = Limits()
+    assert lim.max_zip_bytes == 400 * 1024 * 1024
+    assert lim.max_total_bytes == 2048 * 1024 * 1024
+    assert lim.max_file_bytes == 100 * 1024 * 1024
+
+
+@pytest.mark.parametrize(("detail", "message"), [
+    ("파일이 너무 큽니다: secret.jar", "파일별 크기 한도를 넘는"),
+    ("허용되지 않는 경로: ../secret.py", "상대 경로 이탈"),
+    ("링크·특수 파일은 올릴 수 없습니다: link", "심볼릭 링크"),
+])
+def test_upload_rejection_hides_archive_filenames(detail, message):
+    from backend.app.main import _upload_rejection_message
+    out = _upload_rejection_message(Exception(detail))
+    assert message in out and "secret" not in out and "link" not in out
 
 
 # ---- API ----

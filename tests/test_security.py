@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from backend.app.security.gate import decide, is_sensitive, tracing_allowed, tracing_decision
@@ -64,6 +66,16 @@ def test_tracing_endpoint_from_env(monkeypatch):
     assert tracing_allowed(p, True)
     monkeypatch.delenv("LANGSMITH_ENDPOINT")
     assert not tracing_allowed(p, True)          # 기본값은 클라우드
+
+
+def test_tracing_policy_overrides_unsafe_preexisting_environment(monkeypatch):
+    """배포 환경에 남은 false가 코드·질문 trace 저장을 허용하면 안 된다."""
+    from backend.app.main import _apply_tracing_environment
+    monkeypatch.setenv("LANGSMITH_HIDE_INPUTS", "false")
+    monkeypatch.setenv("LANGSMITH_HIDE_OUTPUTS", "false")
+    _apply_tracing_environment(_policy())
+    assert os.environ["LANGSMITH_HIDE_INPUTS"] == "true"
+    assert os.environ["LANGSMITH_HIDE_OUTPUTS"] == "true"
 
 
 def test_masking_hides_secrets():

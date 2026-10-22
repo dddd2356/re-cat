@@ -16,20 +16,34 @@ import shutil
 import stat
 import tempfile
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 _NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,63}$")
 SKIP_PARTS = {"__MACOSX", ".git", ".svn", ".hg", "node_modules", ".venv", "venv", "__pycache__",
               ".idea", ".vscode", "build", "dist", "target", ".gradle"}
 
+_MIB = 1024 * 1024
+
+
+def _limit_from_env(name: str, default_mb: int, maximum_mb: int) -> int:
+    """운영 환경별 업로드 한도. 잘못되거나 과도한 값은 닫힌 기본/상한으로 제한한다."""
+    raw = os.environ.get(name, "").strip()
+    try:
+        value = int(raw) if raw else default_mb
+    except ValueError:
+        value = default_mb
+    return max(1, min(value, maximum_mb)) * _MIB
+
 
 @dataclass
 class Limits:
-    max_zip_bytes: int = 50 * 1024 * 1024
-    max_total_bytes: int = 300 * 1024 * 1024
-    max_file_bytes: int = 20 * 1024 * 1024
-    max_files: int = 20_000
+    # 코드 저장소는 50MB를 넘는 경우가 흔하다. 기본값은 현실적으로 올리되, 환경변수도
+    # 무제한으로 키울 수 없게 상한을 둔다. reverse proxy도 같은 수준으로 맞춰야 한다.
+    max_zip_bytes: int = field(default_factory=lambda: _limit_from_env("RECAT_UPLOAD_MAX_ZIP_MB", 250, 500))
+    max_total_bytes: int = field(default_factory=lambda: _limit_from_env("RECAT_UPLOAD_MAX_TOTAL_MB", 1024, 2048))
+    max_file_bytes: int = field(default_factory=lambda: _limit_from_env("RECAT_UPLOAD_MAX_FILE_MB", 100, 250))
+    max_files: int = 50_000
     max_ratio: int = 200                # 파일 하나의 압축률 상한 (풀린 크기 / 압축 크기)
 
 
@@ -44,11 +58,13 @@ def _members(zf: zipfile.ZipFile, lim: Limits) -> list[tuple[zipfile.ZipInfo, Pu
         p = PurePosixPath(raw)
         if raw.startswith("/") or re.match(r"^[A-Za-z]:", raw) or ".." in p.parts:
             raise UploadRejected(f"허용되지 않는 경로: {info.filename}")
+        # 제외 대상은 어떤 형태의 항목이든 추출하지 않는다. node_modules/.git 등에 든
+        # 심볼릭 링크까지 거부하면, 분석하지 않을 의존성 때문에 정상 소스 업로드가 막힌다.
+        if info.is_dir() or any(part in SKIP_PARTS for part in p.parts):
+            continue
         ftype = stat.S_IFMT((info.external_attr >> 16) & 0xFFFF)   # 0이면 형식 정보 없음(윈도우 zip 등) → 일반 파일
         if ftype and ftype not in (stat.S_IFREG, stat.S_IFDIR):
             raise UploadRejected(f"링크·특수 파일은 올릴 수 없습니다: {info.filename}")
-        if info.is_dir() or any(part in SKIP_PARTS for part in p.parts):
-            continue
         if info.file_size > lim.max_file_bytes:
             raise UploadRejected(f"파일이 너무 큽니다: {info.filename}")
         if info.compress_size and info.file_size / info.compress_size > lim.max_ratio and info.file_size > 1024 * 1024:

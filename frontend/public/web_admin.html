@@ -193,7 +193,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:15px;hei
         </div>
         <div v-if="!upSensitive" class="note warnn">민감 해제는 이 저장소의 코드가 설정에 따라 외부 모델로 갈 수 있게 합니다. 클라우드가 정책으로 꺼져 있으면 영향이 없습니다.</div>
         <div v-if="upResult" class="note okn">{{ upResult }}</div>
-        <div class="note">프로젝트를 통째로 올리면 전체를 분석합니다. 최상위 폴더 하나는 자동으로 벗기고, .git·node_modules·빌드 산출물은 건너뜁니다. 경로 이탈(../)·링크·압축 폭탄은 거부하며, 상한은 zip 50MB · 압축 해제 300MB · 파일 2만 개입니다. 코드는 실행하지 않고 읽기만 합니다.</div></div>
+        <div class="note">프로젝트를 통째로 올리면 전체를 분석합니다. 최상위 폴더 하나는 자동으로 벗기고, .git·node_modules·빌드 산출물은 건너뜁니다. 경로 이탈(../)·링크·압축 폭탄은 거부하며, 기본 상한은 zip 250MB · 압축 해제 1GB · 파일 5만 개입니다. 코드는 실행하지 않고 읽기만 합니다.</div></div>
       <div class="box"><h3>서버 폴더에서 등록</h3>
         <div v-if="!repos.candidates.length" class="note">등록할 수 있는 폴더가 없습니다. 서버의 <code>var/data/repos/</code> 아래에 코드를 배치하면 여기에 나타납니다.</div>
         <form v-else class="reg" @submit.prevent="register">
@@ -257,7 +257,7 @@ createApp({
         fd.append('sensitive', upSensitive.value ? 'true' : 'false'); fd.append('replace', upReplace.value ? 'true' : 'false');
         const r = await fetch('/admin/repos/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + key.value }, body: fd });
         const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(r.status === 401 ? '관리자 키가 올바르지 않습니다.' : (d.detail || ('요청 실패 (' + r.status + ')')));
+        if (!r.ok) throw new Error(r.status === 401 ? '관리자 키가 올바르지 않습니다.' : (d.error?.message || d.detail || ('요청 실패 (' + r.status + ')')));
         upResult.value = `${d.repo} 올림 — 파일 ${d.uploaded_files}개, 함수 ${d.function_count}개, 문서 절 ${d.doc_sections}개${d.sensitive ? ' · 민감' : ''}`;
         upName.value = ''; upFile.value = null; upFolder.value = []; upReplace.value = false; await loadRepos(); await load();
       } catch (e) { repoError.value = e.message; } finally { uploading.value = false; }
@@ -265,7 +265,7 @@ createApp({
     async function postForm(url, fd) {
       const r = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + key.value }, body: fd });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(r.status === 401 ? '관리자 키가 올바르지 않습니다.' : (d.detail || ('요청 실패 (' + r.status + ')')));
+      if (!r.ok) throw new Error(r.status === 401 ? '관리자 키가 올바르지 않습니다.' : (d.error?.message || d.detail || ('요청 실패 (' + r.status + ')')));
       return d;
     }
     async function uploadFolder() {
