@@ -154,15 +154,22 @@ def search_sections(query: str, sections: list[Section], top_k: int = 3) -> list
 # ---- 코드와의 대조 (결정적) ----
 
 def _lookup(g: CallGraph, name: str) -> tuple[str, list[str]]:
-    """문서의 이름 → ('found'|'missing'|'ambiguous', [qualname...])."""
+    """문서의 이름 → ('found'|'missing'|'ambiguous', [qualname...]).
+    LangGraph 노드는 `g.add_node("explain", explain_node)`처럼 짧은 키로 등록되지만 실제
+    함수는 `explain_node`처럼 접미사가 붙는다 — 그 접미사 붙은 이름이 유일하면 우선한다
+    (그래프 다이어그램의 "explain"이 무관한 동명 메서드와 겹쳐 모호해지는 것을 막는다)."""
     exact = sorted({s.qualname for s in g.symbols.values() if s.qualname == name})
     if exact:
         return "found", exact
-    short = name.split(".")[-1]
-    by_short = sorted({s.qualname for s in g.symbols.values() if s.name == short})
-    if len(by_short) == 1 and "." not in name:
+    if "." in name:
+        return "missing", []
+    by_node = sorted({s.qualname for s in g.symbols.values() if s.name == f"{name}_node"})
+    if len(by_node) == 1:
+        return "found", by_node
+    by_short = sorted({s.qualname for s in g.symbols.values() if s.name == name})
+    if len(by_short) == 1:
         return "found", by_short
-    if len(by_short) > 1 and "." not in name:
+    if len(by_short) > 1:
         return "ambiguous", by_short
     return "missing", []
 

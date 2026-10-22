@@ -19,6 +19,7 @@ import tree_sitter_java
 from tree_sitter import Language, Node, Parser
 
 from .base import CallEdge, CallGraph, Symbol
+from .python_analyzer import _skip_analysis_file
 
 _JAVA = Language(tree_sitter_java.language())
 _REFLECTION = {"invoke", "forName", "newInstance", "getMethod", "getDeclaredMethod"}
@@ -55,6 +56,8 @@ def analyze_java(repo: str, root: Path) -> CallGraph:
 
     for path in sorted(root.rglob("*.java")):
         rel = path.relative_to(root).as_posix()
+        if _skip_analysis_file(rel):
+            continue
         src = path.read_bytes()
         parsed.append((rel, src, parser.parse(src).root_node))
 

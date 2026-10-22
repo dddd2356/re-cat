@@ -26,6 +26,28 @@ def test_python_dynamic_call_is_unresolved_not_dropped():
     assert "dynamic" in reasons
 
 
+def test_langgraph_add_node_via_literal_pair_loop_is_unrolled(tmp_path):
+    """`for name, fn in [("gate", gate_node), ...]: g.add_node(name, fn)`처럼 노드를 리터럴 쌍
+    목록을 도는 반복으로 등록해도(실제 recat의 build_graph가 이렇게 한다), add_node의 인자가
+    반복 변수라는 이유로 그래프 간선이 통째로 빠지면 안 된다."""
+    (tmp_path / "graph.py").write_text(
+        "def gate_node(state): pass\n"
+        "def route_node(state): pass\n"
+        "def build_graph():\n"
+        "    g = StateGraph()\n"
+        "    for name, fn in [('gate', gate_node), ('route', route_node)]:\n"
+        "        g.add_node(name, fn)\n"
+        "    g.set_entry_point('gate')\n"
+        "    g.add_edge('gate', 'route')\n"
+        "    return g\n"
+    )
+    g = analyze_repo("langgraph_loop", tmp_path)
+    gate = g.find("gate_node")[0]
+    route = g.find("route_node")[0]
+    edge = next(e for e in g.edges if e.caller == gate.id and e.callee == route.id)
+    assert edge.kind == "graph" and edge.resolved
+
+
 def test_java_field_injection_resolves_class_dependency():
     g = analyze_repo("sample_java", ROOT / "sample_java")
     pairs = _pairs(g, "OrderService.create")

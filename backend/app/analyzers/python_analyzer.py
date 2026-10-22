@@ -23,11 +23,14 @@
   - LangGraph 선언: g.add_node("n", fn) / add_edge("a","b") / add_conditional_edges("a", router, {..: "b"})
     → 노드 함수 사이의 실행 순서 간선(kind="graph")으로 추가한다. 빌더 함수는 시작 노드와 연결된다.
     (조건 분기의 매핑이 dict 리터럴이 아니면 resolved=False/dynamic으로 남긴다.)
+    `for name, fn in [("n", fn), ...]: g.add_node(name, fn)`처럼 리터럴 쌍 목록을 도는 등록도
+    반복을 펼쳐서 같이 잡는다.
 """
 from __future__ import annotations
 
 import ast
 import builtins
+import copy
 from pathlib import Path
 
 from .base import BUILTIN_METHOD_NAMES, CallEdge, CallGraph, Symbol
@@ -289,12 +292,22 @@ def _var_types(fn: ast.AST, by_class: dict[str, dict[str, str]], module_imports:
     return vt
 
 
+_SKIP_ANALYSIS_PARTS = {".git", ".venv", "venv", "node_modules", "__pycache__", "build", "dist", "target", "tests"}
+
+
+def _skip_analysis_file(rel: str) -> bool:
+    parts = Path(rel).parts
+    # Recat 실행 데이터 안에는 업로드한 다른 저장소·과거 snapshot·분석 fixture가 들어간다.
+    # 이들은 사용자가 현재 올린 프로젝트의 코드가 아니므로 그래프에 섞으면 안 된다.
+    return any(part in _SKIP_ANALYSIS_PARTS or part.startswith(".") for part in parts) or parts[:3] == ("var", "data", "repos")
+
+
 def analyze_python(repo: str, root: Path) -> CallGraph:
     g = CallGraph(repo=repo)
     modules: list[_ModuleInfo] = []
     for path in sorted(root.rglob("*.py")):
         rel = path.relative_to(root).as_posix()
-        if "/." in f"/{rel}" or "__pycache__" in rel:
+        if _skip_analysis_file(rel):
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
@@ -450,11 +463,44 @@ def _node_func(expr: ast.AST, m: _ModuleInfo, by_func: dict[str, str]) -> str | 
     return None
 
 
+class _NameSub(ast.NodeTransformer):
+    """`for name, fn in [...]:` 같은 반복의 몸 안에서 반복 변수 이름을 그 반복 차례의 리터럴로 바꿔친다."""
+
+    def __init__(self, mapping: dict[str, ast.AST]):
+        self.mapping = mapping
+
+    def visit_Name(self, node: ast.Name) -> ast.AST:
+        return self.mapping.get(node.id, node)
+
+
+def _unroll_literal_for_calls(fn: ast.AST) -> list[ast.Call]:
+    """`for name, f in [("gate", gate_node), ...]: g.add_node(name, f)`처럼 노드를 리터럴 쌍 목록을
+    돌며 등록하면 add_node의 인자가 반복 변수라 그대로는 못 읽는다. 반복을 펼쳐 각 차례의 리터럴이
+    채워진 Call 노드를 만들어 돌려준다(실행하지 않고 AST만 복제·치환)."""
+    out: list[ast.Call] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.For):
+            continue
+        target, it = node.target, node.iter
+        if not (isinstance(target, ast.Tuple) and all(isinstance(t, ast.Name) for t in target.elts)):
+            continue
+        if not (isinstance(it, (ast.List, ast.Tuple))
+                and it.elts and all(isinstance(e, ast.Tuple) and len(e.elts) == len(target.elts) for e in it.elts)):
+            continue
+        names = [t.id for t in target.elts]
+        calls = [n for n in ast.walk(node) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
+        for elt in it.elts:
+            sub = _NameSub(dict(zip(names, elt.elts)))
+            out += [sub.visit(copy.deepcopy(c)) for c in calls]
+    return out
+
+
 def _add_langgraph_edges(g: CallGraph, modules: list[_ModuleInfo], by_func: dict[str, str]) -> None:
     for m in modules:
         for builder_name, fn in m.functions.items():
             attr_calls = [n for n in ast.walk(fn)
                           if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
+            attr_calls += _unroll_literal_for_calls(fn)
             nodes: dict[str, str] = {}      # 그래프 노드 이름 → 함수 symbol id
             for c in attr_calls:
                 if c.func.attr == "add_node" and len(c.args) >= 2 and _str(c.args[0]):
