@@ -55,15 +55,13 @@ Re-cat은 담당자가 바뀐 레거시 코드를 인수인계할 때, "이 함�
                           (정적 분석 그래프)      (fast/quality/embed)   (등록부·대화·감사·문서벡터)
 ```
 
-코드 질문은 `gate → route → locate → explore → explain → verify → finalize` 경로를, 문서 질문은 `doc_locate → doc_check → doc_explain → doc_verify` 경로를 LangGraph 상태 그래프로 거칩니다. 설계와 신뢰 경계의 전체 설명은 [아키텍처 문서](docs/ARCHITECTURE.md)를, 다이어그램 재생성은 `python docs/architecture_diagram.py`(matplotlib 필요)를 참고하세요.
+코드 질문은 `gate → route → locate → explore → explain → verify → finalize` 경로를, 문서 질문은 `doc_locate → doc_check → doc_explain → doc_verify` 경로를 LangGraph 상태 그래프로 거칩니다. 설계와 신뢰 경계의 전체 설명은 [아키텍처 문서](docs/ARCHITECTURE.md)를 참고하세요.
 
 ### 에이전트 그래프 상세
 
 실제 노드 구성(`backend/app/agents/graph.py`)과, 각 분기에서 실제로 어떤 질문이 그 경로를 타는지를 함께 표시한 흐름도입니다.
 
 ![Re-cat 에이전트 그래프](docs/agent_flow.png)
-
-재생성: `python docs/agent_flow_diagram.py`(matplotlib 필요).
 
 ## 기술 스택
 
