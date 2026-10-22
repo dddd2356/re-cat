@@ -91,13 +91,31 @@
         });
       },
     },
+    data() { return { scale: 0.85, x: 18, y: 18, panning: false, moved: false, skipClick: false }; },
     methods: { trunc, cls(n) {
       return ['node', n.kind || 'symbol', { hl: this.highlight.includes(n.id), sel: this.selected === n.id,
                                               entry: this.entry === n.id }];
-    } },
+    },
+      wheel(e) {
+        const before = this.scale, next = Math.max(0.35, Math.min(2.5, before * (e.deltaY < 0 ? 1.12 : 0.89)));
+        const box = this.$refs.canvas.getBoundingClientRect();
+        const px = e.clientX - box.left, py = e.clientY - box.top;
+        this.x = px - (px - this.x) * (next / before); this.y = py - (py - this.y) * (next / before); this.scale = next;
+      },
+      down(e) {
+        if (e.button !== 0) return;
+        const x0 = e.clientX, y0 = e.clientY, ox = this.x, oy = this.y; this.panning = true; this.moved = false;
+        const move = ev => { const dx = ev.clientX - x0, dy = ev.clientY - y0; if (Math.abs(dx) + Math.abs(dy) > 3) this.moved = true; this.x = ox + dx; this.y = oy + dy; };
+        const up = () => { this.panning = false; if (this.moved) { this.skipClick = true; setTimeout(() => { this.skipClick = false; }, 0); } window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+        window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+      },
+      nodeClick(id) { if (!this.skipClick) this.$emit('select', id); },
+      reset() { this.scale = 0.85; this.x = 18; this.y = 18; }, zoom(delta) { this.scale = Math.max(0.35, Math.min(2.5, this.scale + delta)); },
+    },
     template: `
-      <div class="graph-scroll">
-        <svg :width="lay.W" :height="lay.H" :viewBox="'0 0 ' + lay.W + ' ' + lay.H">
+      <div ref="canvas" class="graph-scroll" :class="{ panning }" @wheel.prevent="wheel" @mousedown="down">
+        <div class="map-tools" @mousedown.stop><button class="small ghost" @click="zoom(-0.15)">−</button><button class="small ghost" @click="reset">{{ Math.round(scale * 100) }}%</button><button class="small ghost" @click="zoom(0.15)">+</button></div>
+        <svg :width="lay.W" :height="lay.H" :viewBox="'0 0 ' + lay.W + ' ' + lay.H" :style="{ position:'absolute', left:'0', top:'0', transformOrigin:'0 0', transform:'translate(' + x + 'px,' + y + 'px) scale(' + scale + ')' }">
           <defs>
             <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" style="fill:var(--edge, #8a93a6)"/></marker>
@@ -110,7 +128,7 @@
             <text v-if="e.label" :x="e.mid.x" :y="e.mid.y" class="elabel" text-anchor="middle">{{ e.label }}</text>
           </g>
           <g v-for="n in nodes" :key="n.id" :class="cls(n)" style="cursor:pointer"
-             :transform="'translate(' + lay.pos[n.id].x + ',' + lay.pos[n.id].y + ')'" @click="$emit('select', n.id)" @dblclick="$emit('open', n.id)">
+             :transform="'translate(' + lay.pos[n.id].x + ',' + lay.pos[n.id].y + ')'" @click.stop="nodeClick(n.id)" @dblclick.stop="$emit('open', n.id)">
             <rect width="${NODE_W}" height="${NODE_H}" rx="9"/>
             <text x="12" y="21" class="nlabel">{{ trunc(n.label, 22) }}</text>
             <text x="12" y="38" class="nsub">{{ trunc(n.sub, 26) }}</text>

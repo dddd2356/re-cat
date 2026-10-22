@@ -50,7 +50,8 @@ def test_class_question_covers_all_methods_and_verifies(client):
     assert ("OrderService.create", "PaymentClient.request") in pairs and ("OrderService.cancel", "PaymentClient.refund") in pairs
     assert out["verification"]["ok"] and out["verification"]["verified"] >= len(pairs)   # 합집합 체인으로 검증
     assert "범위: OrderService 클래스 전체" in out["reply"]
-    assert "OrderService" not in out["symbols"] and "OrderService.cancel" in out["symbols"]   # 코드 버튼은 실제 함수만
+    labels = {ref["label"] for ref in out["symbols"]}
+    assert "OrderService" not in labels and "OrderService.cancel" in labels   # 코드 버튼은 실제 함수만
 
 
 def test_followup_without_code_name_continues_previous_question(client):

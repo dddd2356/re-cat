@@ -48,8 +48,14 @@ class _OpenAI:
 
 class OpenAIFastLLM(_OpenAI):
     @traceable(run_type="llm", name="fast_llm.route")
-    def route(self, query: str) -> tuple[dict, dict]:
-        out, usage = self._json(ROUTE_SYSTEM, query, ROUTE_SCHEMA, "route")
+    def route(self, query: str, document_candidates: list[dict] | None = None) -> tuple[dict, dict]:
+        candidates = document_candidates or []
+        evidence = "\n".join(
+            f"- {item['title']} ({item['file']}): {item.get('preview', '')}"
+            for item in candidates[:3]
+        ) or "(없음)"
+        out, usage = self._json(ROUTE_SYSTEM, f"[질문]\n{query}\n\n[등록 문서 후보]\n{evidence}",
+                                ROUTE_SCHEMA, "route")
         return {"route": out.get("route") if out.get("route") in ROUTES else "trace"}, usage
 
     @traceable(run_type="llm", name="fast_llm.select_expansions")

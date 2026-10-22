@@ -67,11 +67,18 @@
   .tab { padding: 8px 14px; border-radius: 8px 8px 0 0; background: transparent; color: var(--muted); border: 1px solid transparent; border-bottom: 0; }
   .tab.on { background: var(--bg); color: var(--text); border-color: var(--line); }
   .canvas { flex: 1; min-height: 0; background: var(--bg); position: relative; display: flex; flex-direction: column; }
-  .graph-scroll { flex: 1; min-height: 0; overflow: auto; padding: 4px; }
+  .graph-scroll { flex: 1; min-height: 0; overflow: hidden; padding: 4px; position: relative; cursor: grab; touch-action: none; }
+  .graph-scroll.panning { cursor: grabbing; }
+  .map-tools { position: absolute; right: 12px; top: 12px; z-index: 2; display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--panel) 92%, transparent); box-shadow: 0 2px 8px #0002; }
   .legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 14px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); background: var(--panel); }
   .legend i { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--edge); vertical-align: middle; margin-right: 5px; }
   .legend i.d { border-top: 2px dashed var(--warn); }
   .empty { margin: auto; color: var(--muted); text-align: center; padding: 30px; line-height: 1.7; }
+  .module-list { overflow: auto; padding: 10px; display: grid; gap: 7px; align-content: start; }
+  .module { width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); padding: 10px 11px; cursor: pointer; color: var(--text); }
+  .module:hover, .module.on { border-color: var(--accent); background: var(--accent-soft); }
+  .module b { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .module span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
   .detail { background: var(--panel); padding: 10px 14px; overflow: auto; font-size: 13px; flex: none; }
   .detail .codeview pre { max-height: none; }
   .detail .codeview.full pre { max-height: 60vh; }
@@ -203,29 +210,18 @@
     <div class="box"><code-box :c="bigCode" :big="true" @close="bigCode = null"></code-box></div>
   </div>
   <main :style="leftW ? { gridTemplateColumns: leftW + 'px 6px 1fr' } : null">
-    <!-- 왼쪽: 구조 개요 / 호출 흐름 그래프 -->
+    <!-- 왼쪽: 모듈 선택 → 함수 → 호출 경로 → 코드 -->
     <section class="left" ref="leftEl">
       <div class="tabs">
-        <button class="tab" :class="{ on: tab === 'overview' }" @click="tab = 'overview'">구조 개요</button>
-        <button class="tab" :class="{ on: tab === 'flow' }" @click="tab = 'flow'">호출 흐름
+        <button class="tab" :class="{ on: tab === 'overview' }" @click="tab = 'overview'">모듈</button>
+        <button class="tab" :class="{ on: tab === 'flow' }" @click="tab = 'flow'">호출 경로
           <span v-if="flow" class="pill" style="margin-left:6px">{{ flow.entry }}</span></button>
       </div>
       <div class="canvas">
         <template v-if="tab === 'overview'">
-          <div class="crumbs">
-            <button class="crumb" :class="{ on: !nav.length }" @click="navTo(0)">전체 구조</button>
-            <template v-for="(lv, i) in nav" :key="i"><span>›</span>
-              <button class="crumb" :class="{ on: i === nav.length - 1 }" @click="navTo(i + 1)">{{ lv.label }}</button></template>
-            <span class="hint">더블클릭: 안으로 들어가기 · 클릭: 코드 보기</span>
-          </div>
-          <template v-if="!nav.length">
-            <graph-view v-if="overview && overview.nodes.length" :nodes="ovNodes" :edges="ovEdges"
-                        :highlight="ovHighlight" :selected="selGroup" @select="onGroupSelect" @open="openGroup"></graph-view>
-            <div v-else class="empty">{{ overviewError || '구조 개요를 불러오는 중…' }}</div>
-          </template>
-          <graph-view v-else-if="navTop.nodes" :nodes="navNodes" :edges="navEdges" :highlight="flowHighlight"
-                      :selected="selSymbol" :entry="navTop.entry || ''" @select="onNavSelect" @open="onNavOpen"></graph-view>
-          <div v-else class="empty">{{ navTop.error || '불러오는 중…' }}</div>
+          <graph-view v-if="repoTree.nodes.length" :nodes="repoTree.nodes" :edges="repoTree.edges"
+                      :selected="selGroup" @select="onTreeSelect"></graph-view>
+          <div v-else class="empty">{{ overviewError || '코드베이스 지도를 불러오는 중…' }}</div>
         </template>
         <template v-else>
           <graph-view v-if="flow" :nodes="flowNodes" :edges="flowEdges" :highlight="flowHighlight"
@@ -236,7 +232,7 @@
         <div class="legend">
           <span><i></i>정적 분석이 확정한 호출</span>
           <span><i class="d"></i>분석이 따라가지 못함 (확인 안 됨)</span>
-          <span v-if="tab === 'overview'">선 위 숫자 = 호출 횟수 · 노란 배지 = 미해석 호출 수</span>
+          <span v-if="tab === 'overview'">폴더·파일을 따라가며 파일을 눌러 함수와 코드를 확인하세요</span>
         </div>
         <div class="splitter" v-if="detail && !detailFold" :class="{ drag: dragging }" @mousedown.prevent="startDrag" title="끌어서 코드 영역 크기 조절"></div>
         <div class="detail" v-if="detail" :class="{ fold: detailFold }" :style="detailFold ? null : { height: detailH + 'px' }">
@@ -249,15 +245,15 @@
             <div class="fn" v-for="f in detail.functions" :key="f.id">
               <code>{{ f.qualname }}</code>
               <button class="small" @click="ask(f.qualname + ' 호출 흐름')" :disabled="sending">호출 흐름</button>
-              <button class="small ghost" @click="showImpact(f.qualname)">영향 범위</button>
-              <button class="small ghost" @click="showDetailCode(f.qualname)">코드</button>
+              <button class="small ghost" @click="showImpact(f.id)">영향 범위</button>
+              <button class="small ghost" @click="showDetailCode(f.id, f.qualname)">코드</button>
             </div>
           </div>
           <div v-if="detail.symbol">
-            <div class="fn"><code>{{ detail.symbol }}</code>
-              <button class="small" @click="ask(detail.symbol + ' 호출 흐름')" :disabled="sending">호출 흐름</button>
-              <button class="small ghost" @click="showImpact(detail.symbol)">영향 범위</button>
-              <button class="small ghost" @click="showDetailCode(detail.symbol)">코드</button></div>
+            <div class="fn"><code>{{ detail.label || detail.symbol }}</code>
+              <button class="small" @click="ask((detail.label || detail.symbol) + ' 호출 흐름')" :disabled="sending">호출 흐름</button>
+              <button class="small ghost" @click="showImpact(detail.symbol, detail.label || detail.symbol)">영향 범위</button>
+              <button class="small ghost" @click="showDetailCode(detail.symbol, detail.label || detail.symbol)">코드</button></div>
           </div>
           <code-box v-if="detailCode" :c="detailCode" style="border:1px solid var(--line);border-radius:8px;margin-top:8px;overflow:hidden" @big="bigCode = detailCode"></code-box>
           <div v-if="impact" class="impact">
@@ -323,7 +319,10 @@
                       @click="sg.impact ? showImpact(sg.impact) : ask(sg.ask)">{{ sg.label }}</button>
             </div>
             <div class="codebar" v-if="item.symbols && item.symbols.length">코드 보기
-              <button v-for="q in item.symbols" :key="q" class="small ghost" :class="{ on: item.code[q] }" @click="toggleCode(item, q)">{{ q }}</button>
+              <span v-for="ref in item.symbols" :key="ref.id" style="display:inline-flex;gap:2px">
+                <button class="small ghost" :class="{ on: item.code[ref.id] }" @click="toggleCode(item, ref)">{{ ref.label }}</button>
+                <button class="small ghost" title="이 함수를 바꾸면 영향받는 곳" @click="showImpact(ref.id, ref.label)">영향</button>
+              </span>
             </div>
             <code-box v-for="q in Object.keys(item.code)" :key="'c' + q" :c="item.code[q]" @big="bigCode = item.code[q]"></code-box>
           </div>
@@ -506,6 +505,27 @@ createApp({
       const aff = new Set(impact.value.affected.concat(impact.value.qualname));
       return overview.value.nodes.filter(n => n.functions.some(f => aff.has(f.qualname))).map(n => n.id);
     });
+    // 전체 호출선 대신 폴더 → 파일 계층을 그린다. 호출 관계는 함수 선택 뒤에만 별도 탭에서 연다.
+    const repoTree = computed(() => {
+      if (!overview.value) return { nodes: [], edges: [] };
+      const nodes = new Map([['repo', { id: 'repo', label: repo.value, sub: '저장소', kind: 'module' }]]);
+      const edges = [], seen = new Set();
+      const edge = (source, target) => { const key = source + '>' + target; if (!seen.has(key)) { seen.add(key); edges.push({ source, target }); } };
+      const files = new Map();
+      overview.value.nodes.forEach(group => { const list = files.get(group.file) || []; list.push(group); files.set(group.file, list); });
+      for (const [file, groups] of files) {
+        const parts = file.split('/'); let parent = 'repo', path = '';
+        parts.slice(0, -1).forEach(part => {
+          path = path ? path + '/' + part : part; const id = 'dir:' + path;
+          if (!nodes.has(id)) nodes.set(id, { id, label: part + '/', sub: '폴더', kind: 'module' });
+          edge(parent, id); parent = id;
+        });
+        const id = 'file:' + file;
+        nodes.set(id, { id, label: parts[parts.length - 1], sub: `함수 ${groups.reduce((n, g) => n + g.functions.length, 0)}개`, kind: 'symbol' });
+        edge(parent, id);
+      }
+      return { nodes: [...nodes.values()], edges };
+    });
 
     async function api(path) {
       const r = await fetch(path);
@@ -522,6 +542,13 @@ createApp({
       selGroup.value = id; impact.value = null;
       const n = overview.value.nodes.find(x => x.id === id);
       detail.value = { title: `${n.label} (${n.file})`, functions: n.functions, file: n.file }; detailCode.value = null; detailFold.value = false;
+    }
+    function onTreeSelect(id) {
+      if (!id.startsWith('file:')) return;
+      const file = id.slice(5), groups = overview.value.nodes.filter(n => n.file === file);
+      selGroup.value = id; impact.value = null;
+      detail.value = { title: file, functions: groups.flatMap(n => n.functions), file };
+      detailCode.value = null; detailFold.value = false;
     }
 
     // ---- 구조 드릴다운: 전체 구조 → 묶음(클래스·모듈) → 함수 호출 흐름 ----
@@ -624,7 +651,7 @@ createApp({
       try { return await api(`/source/${encodeURIComponent(repo.value)}?symbol=${encodeURIComponent(q)}`); }
       catch (e) { return { error: '코드를 가져오지 못했습니다: ' + e.message, start_line: 0, file: '' }; }
     }
-    async function showDetailCode(q) { detailCode.value = { q, ...(await fetchSource(q)) }; }
+    async function showDetailCode(symbol, label = symbol) { detailCode.value = { q: label, ...(await fetchSource(symbol)) }; }
     async function loadFile({ symbol = '', path = '' }) {
       try { return await api(`/file/${encodeURIComponent(repo.value)}?symbol=${encodeURIComponent(symbol)}&path=${encodeURIComponent(path)}`); }
       catch (e) { return { error: '파일을 가져오지 못했습니다: ' + e.message }; }
@@ -634,12 +661,15 @@ createApp({
       const d = await loadFile({ path });
       detailCode.value = d.error ? { file: path, error: d.error } : { file: path, source: d.source, start_line: 1, full: d, showFull: true };
     }
-    async function toggleCode(item, q) {
-      if (item.code[q]) { delete item.code[q]; return; }
-      item.code[q] = { q, ...(await fetchSource(q)) };
+    async function toggleCode(item, ref) {
+      if (item.code[ref.id]) { delete item.code[ref.id]; return; }
+      item.code[ref.id] = { q: ref.label, ...(await fetchSource(ref.id)) };
     }
-    async function showImpact(symbol) {
-      try { impact.value = await api(`/callers/${encodeURIComponent(repo.value)}?symbol=${encodeURIComponent(symbol)}&depth=3`); }
+    async function showImpact(symbol, label = symbol) {
+      try {
+        impact.value = await api(`/callers/${encodeURIComponent(repo.value)}?symbol=${encodeURIComponent(symbol)}&depth=3`);
+        detail.value = { title: '변경 영향 범위', symbol, label }; detailFold.value = false;
+      }
       catch (e) { error.value = '영향 범위를 가져오지 못했습니다: ' + e.message; }
     }
 
@@ -699,8 +729,8 @@ createApp({
     }
 
     return { backendLabel, repos, repo, log, input, sending, showGuide, error, logEl, tab, overview, overviewError, flow,
-      selGroup, selSymbol, detail, impact, examples, currentSensitive, ovNodes, ovEdges, ovHighlight, flowNodes, flowEdges,
-      flowHighlight, onRepoChange, onGroupSelect, onSymbolSelect, showImpact, ask, onSubmit, detailCode, showDetailCode, toggleCode, showFile, closeDetail, leftW, hdragging, startHDrag, resetLeftW, detailFold, leftEl, dragging, bigCode, detailH, startDrag, nav, navTop, navTo, openGroup, openFunc, onNavSelect, onNavOpen, navNodes, navEdges };
+      selGroup, selSymbol, detail, impact, examples, currentSensitive, ovNodes, ovEdges, ovHighlight, repoTree, flowNodes, flowEdges,
+      flowHighlight, onRepoChange, onGroupSelect, onTreeSelect, onSymbolSelect, showImpact, ask, onSubmit, detailCode, showDetailCode, toggleCode, showFile, closeDetail, leftW, hdragging, startHDrag, resetLeftW, detailFold, leftEl, dragging, bigCode, detailH, startDrag, nav, navTop, navTo, openGroup, openFunc, onNavSelect, onNavOpen, navNodes, navEdges };
   },
 }).mount('#app');
 </script>

@@ -38,8 +38,11 @@ EXPLAIN_SCHEMA = {
 }
 
 ROUTE_SYSTEM = (
-    "사용자의 질문이 문서(기획서·명세·README)의 내용이나 '문서의 이 단계가 코드의 어디인가'에 대한 것이면 route=doc, "
-    "코드의 동작·호출 흐름·구조에 대한 것이면 route=trace, 인사나 잡담이면 route=chat 으로 분류하세요. JSON만 출력하세요.")
+    "사용자의 질문과 [등록 문서 후보]를 함께 읽고 의도를 분류하세요. 후보 문서의 제목·미리보기와 질문이 "
+    "의미상 관련되거나, 사용자가 과거 장애·결정·절차·한계·기획 내용을 묻는다면 route=doc입니다. "
+    "이때 사용자가 '문서'라는 단어를 쓰지 않아도 됩니다. 코드의 동작·호출 흐름·구조 자체를 묻는 경우만 "
+    "route=trace, 인사나 잡담이면 route=chat입니다. 등록 문서 후보가 비어 있으면 후보에 관한 내용을 추정하지 마세요. "
+    "JSON만 출력하세요.")
 
 ROUTES = ("chat", "trace", "doc")
 
@@ -73,7 +76,8 @@ def explain_user_prompt(query: str, structure: str, snippets: dict[str, str],
 
 
 DOC_SYSTEM = (
-    "당신은 문서와 코드를 대조해 설명하는 도우미입니다. 질문이 문서 내용 자체(원인·절차·한계·결정 등)를 물으면 "
+    "당신은 문서와 코드를 대조해 설명하는 도우미입니다. [문서 묶음] 표시가 있으면 모든 절을 빠뜨리지 않고 "
+    "항목별로 요약하되 코드 함수명·호출 관계를 새로 언급하지 말고 claims는 빈 배열로 두세요. 질문이 문서 내용 자체(원인·절차·한계·결정 등)를 물으면 "
     "explanation 첫머리에 [문서 절]의 내용만으로 2~4문장 직접 답하세요(문서에 없는 내용은 지어내지 말고, 없으면 없다고). "
     "호출 관계 대조 결과가 비었으면 대조 이야기는 한 문장으로 줄이세요. [문서 절]은 문서의 내용이고, [대조 결과]는 문서에 적힌 "
     "호출 관계를 정적 분석과 맞춰 본 결과입니다(match/indirect=일치, mismatch=불일치, missing=코드에 없는 이름, "
@@ -91,7 +95,8 @@ def doc_user_prompt(query: str, section: dict, check: dict) -> str:
     import json
     additional = "".join(f"\n\n[추가 문서 절] {s['file']} · {s['title']}\n{s['text']}" for s in section.get("additional_sections", []))
     code = json.dumps(section.get("code_evidence", []), ensure_ascii=False)
-    return (f"[질문]\n{query}\n\n[문서 절] {section['file']} · {section['title']}\n{section['text']}"
+    collection = "\n[문서 묶음 — 전체 절 요약 요청]" if section.get("document_collection") else ""
+    return (f"[질문]\n{query}{collection}\n\n[문서 절] {section['file']} · {section['title']}\n{section['text']}"
             f"{additional}\n\n[대조 결과]\n{rows}{rel_text}\n\n[실제 코드]\n{code}")
 
 

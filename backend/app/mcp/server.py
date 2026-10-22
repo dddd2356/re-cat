@@ -132,7 +132,7 @@ def get_callees(repo: str, symbol: str) -> dict:
     for e in g.callees(s.id):
         if e.resolved:
             callee = g.symbols[e.callee]
-            callees.append({"id": callee.id, "qualname": callee.qualname,
+            callees.append({"id": callee.id, "qualname": callee.qualname, "file": callee.file,
                             "text": e.callee_text, "line": e.line})
         else:
             item = {"text": e.callee_text, "line": e.line, "reason": e.reason}
@@ -198,6 +198,14 @@ def search_docs(repo: str, query: str, k: int = 3) -> dict:
     from backend.app.retrieval.hybrid import search
     hits, retrieval = search(repo,query,secs,max(1,min(k,10)))
     return {"repo":repo,"total_sections":len(secs),"hits":hits,"retrieval":retrieval}
+
+
+@mcp.tool()
+def list_doc_sections(repo: str, file: str = "") -> dict:
+    """문서 절 메타데이터. file을 비우면 전체 문서 목록, 지정하면 그 파일의 모든 절을 돌려준다."""
+    items = [{"id": s.id, "file": s.file, "title": s.title, "line": s.line,
+              "score": 0.0, "preview": s.text[:120]} for s in _sections(repo) if not file or s.file == file]
+    return {"repo": repo, "file": file, "hits": items}
 
 
 @mcp.tool()

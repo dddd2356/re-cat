@@ -72,6 +72,7 @@ class AgentState(TypedDict, total=False):
     doc_section: dict
     doc_check: dict
     doc_symbol: str
+    doc_all: bool
     llm_down: bool                # 모델 서버가 재시도 후에도 응답하지 않음
     named_missing: bool           # 질문에 적은 코드 이름이 저장소에 없음
 
@@ -97,29 +98,38 @@ async def gate_node(state: AgentState, deps: SupervisorDeps) -> dict:
 
 @traceable(name="route_node")
 async def route_node(state: AgentState, deps: SupervisorDeps) -> dict:
-    down = []
-    # 규칙이 먼저 정한다: 코드 이름·'호출/흐름/동작/어떻게' → trace, '문서/명세/기획서/N단계' → doc.
-    # 작은 분류 모델(qwen3:0.6b)은 규칙이 '잡담'이라고 본 애매한 질문에만 쓴다(트러블슈팅 ⑩).
+    down, candidates = [], []
+    # 라우팅 전에 등록 문서의 후보를 찾고 LLM에게 함께 준다. '트러블 슈팅'처럼 문서라는
+    # 단어가 없는 질문도 제목·본문과 대조해 문서-코드 검증 경로로 보낼 수 있어야 한다.
+    try:
+        docs, _ = await with_retry(deps.mcp.call_tool, "search_docs",
+                                   {"repo": state["repo"], "query": state["query"]})
+        candidates = docs["hits"]
+    except Exception:
+        candidates = []             # 문서 검색 장애가 코드 질문 자체를 막지는 않는다
     rule, usage = route_by_rule(state["query"])
-    result, by = rule, "rule"
-    if rule["route"] == "chat":
-        try:   # 동기 LLM 호출은 스레드로 — 이벤트 루프(다른 사용자 요청)를 막지 않는다(트러블슈팅 ①)
-            result, usage = await asyncio.to_thread(deps.fast_llm.route, state["query"])
-            by = "model"
-        except LLMUnavailable as e:
-            down = [{"type": "LLMUnavailable", "stage": "route", "detail": str(e)[:120]}]
+    result, by = rule, "rule-fallback"
+    try:   # 동기 LLM 호출은 스레드로 — 이벤트 루프(다른 사용자 요청)를 막지 않는다(트러블슈팅 ①)
+        result, usage = await asyncio.to_thread(deps.fast_llm.route, state["query"], candidates)
+        by = "model"
+        # 규칙이 '잡담'이 아니라고 확신했으면(doc 또는 trace) 모델이 뭐라 답해도 규칙이 이긴다 —
+        # 모델에게는 규칙이 '잡담'으로 본 애매한 질문만 맡긴다. 그렇지 않으면 "_doc_files 호출 흐름"처럼
+        # 코드 이름+호출 신호로 trace가 확실한 질문도, 검색된 문서 후보에 끌려 모델이 doc으로
+        # 돌려버리는 경우를 막지 못한다.
+        if rule["route"] != "chat" and result["route"] != rule["route"]:
+            result, by = rule, "rule-fallback"
+        # 모델이 잡담으로 오판해도, 등록 문서에서 충분히 관련성 높은 절이 검색됐으면
+        # 문서-코드 대조를 우선한다. 키워드 목록이 아니라 실제 등록 문서의 검색 근거를
+        # 쓰는 안전망이다.
+        elif (result["route"] == "chat" and rule["route"] == "chat" and candidates
+                and candidates[0]["score"] >= DOC_FALLBACK_MIN_SCORE):
+            result, by = {"route": "doc"}, "retrieval-fallback"
+    except LLMUnavailable as e:
+        down = [{"type": "LLMUnavailable", "stage": "route", "detail": str(e)[:120]}]
     out = {"route": result["route"], "cost_usd": _cost(state, usage),
            "events": _ev(state, *down, {"type": "RouteDecided", "route": result["route"], "by": by})}
-    if result["route"] == "chat" and not _followup_base(state):
-        # 잡담으로 분류됐어도 등록된 문서와 충분히 겹치면 문서 질문으로 본다('남은 한계가 뭐야?')
-        try:
-            res, _ = await with_retry(deps.mcp.call_tool, "search_docs", {"repo": state["repo"], "query": state["query"]})
-            if res["hits"] and res["hits"][0]["score"] >= DOC_FALLBACK_MIN_SCORE:
-                out["route"] = "doc"
-                out["events"] = out["events"] + [{"type": "RouteToDocs", "section": res["hits"][0]["title"]}]
-                return out
-        except Exception:
-            pass                                       # 문서 검색이 안 되면 원래 분류대로
+    if candidates:
+        out["events"] += [{"type": "DocumentCandidates", "sections": [h["title"] for h in candidates]}]
     prev = _followup_base(state) if out["route"] == "chat" else None
     if prev:
         # 'init이 아니라 전체를 보여줘'처럼 코드 이름 없이 직전 코드 질문을 고쳐 묻는 경우 —
@@ -234,11 +244,13 @@ async def explore_node(state: AgentState, deps: SupervisorDeps) -> dict:
     repo, pol = state["repo"], deps.policy
     calls, retries, cost = 0, 0, state.get("cost_usd", 0.0)
     pairs: list[tuple[str, str]] = []
+    pair_ids: list[tuple[str, str]] = []
     unresolved: list[dict] = []
     snippets: dict[str, str] = {}
     events = list(state.get("events", []))
     entries = list(zip(state.get("entry_ids") or [state["entry_id"]],
                        state.get("entry_names") or [state["entry_name"]]))
+    refs: dict[str, dict] = {sid: {"id": sid, "label": name} for sid, name in entries}
     is_class = state.get("scope") == "class"
     visited = {sid for sid, _ in entries}
     frontier = list(entries)
@@ -274,6 +286,8 @@ async def explore_node(state: AgentState, deps: SupervisorDeps) -> dict:
             by_name = {c["qualname"]: c for c in res["callees"]}
             for c in res["callees"]:
                 pairs.append((name, c["qualname"]))
+                pair_ids.append((sid, c["id"]))
+                refs.setdefault(c["id"], {"id": c["id"], "label": c["qualname"], "file": c.get("file", "")})
             if not by_name:
                 continue
             if deps.explore_mode == "agent":
@@ -307,6 +321,8 @@ async def explore_node(state: AgentState, deps: SupervisorDeps) -> dict:
         pass   # 표준 절차 프롬프트를 못 가져와도 탐색 결과 자체는 유효하다
 
     structure = {"qualname": state["entry_name"], "pairs": sorted(set(pairs)),
+                 "pair_ids": sorted(set(pair_ids)), "symbol_refs": list(refs.values()),
+                 "entry_ids": [sid for sid, _ in entries],
                  "unresolved": unresolved, "procedure": procedure,
                  "scope": state.get("scope", "function"), "entries": [n for _, n in entries]}
     return {"structure": structure, "snippets": snippets, "tool_calls": calls,
@@ -404,11 +420,42 @@ _VERDICT_TEXT = {"match": "✓ 일치", "indirect": "✓ 일치(간접)", "misma
                  "missing": "✗ 코드에 없는 이름", "unknown": "? 확인 안 됨"}
 
 
+def _unique_named_symbol_ids(functions: list[dict], names: list[str]) -> list[str]:
+    """이름이 유일하게 해석되는 경우에만 MCP용 심볼 ID를 돌려준다.
+
+    문서는 사람이 읽는 qualname을 담지만, 업로드 저장소 안에 사본·벤더 코드가 있으면
+    같은 qualname이 여럿일 수 있다. 그때 이름으로 MCP를 호출하거나 첫 항목을 고르면
+    다른 파일을 근거로 삼을 위험이 있으므로, 모호한 이름은 코드 근거에서 제외한다.
+    """
+    by_name: dict[str, list[str]] = {}
+    for function in functions:
+        by_name.setdefault(function["qualname"], []).append(function["id"])
+    return [by_name[name][0] for name in names if len(by_name.get(name, [])) == 1]
+
+
 @traceable(name="doc_locate_node")
 async def doc_locate_node(state: AgentState, deps: SupervisorDeps) -> dict:
     res, _ = await with_retry(deps.mcp.call_tool, "search_docs", {"repo": state["repo"], "query": state["query"]})
+    # '트러블슈팅 모든 것'처럼 한 문서 전체를 요청하면 검색 1위 절(흔히 README 요약)만
+    # 답하지 않는다. 제목이 직접 맞는 원문 파일을 우선하고 그 파일의 모든 절을 넘긴다.
+    all_requested = bool(re.search(r"전체|모든|전부|다\s*설명", state["query"]))
+    if all_requested:
+        # 검색 상위 3개에 원문이 없을 수 있으므로 카탈로그 전체에서 제목·파일명을 찾는다.
+        # 공백을 없애 '트러블 슈팅'과 '트러블슈팅'을 같은 문서 이름으로 취급한다.
+        catalog, _ = await with_retry(deps.mcp.call_tool, "list_doc_sections", {"repo": state["repo"]})
+        preferred = next((h for h in catalog["hits"] if "troubleshooting" in h["file"].lower()), None)
+        if preferred is None:
+            preferred = next((h for h in catalog["hits"]
+                              if "트러블슈팅" in re.sub(r"\s+", "", h["title"]).lower()), None)
+        if preferred is None and res["hits"]:
+            preferred = res["hits"][0]
+        if preferred is not None:
+            all_sections, _ = await with_retry(deps.mcp.call_tool, "list_doc_sections",
+                                                {"repo": state["repo"], "file": preferred["file"]})
+            if all_sections["hits"]:
+                res = {**res, "hits": all_sections["hits"]}
     from_trace = state.get("mode") == "not_found"      # 코드 질문으로 봤는데 시작 함수가 없어서 넘어온 경우
-    if from_trace:
+    if from_trace and not all_requested:
         # 넘어온 경우엔 문서와 충분히 겹칠 때만 문서로 답한다(아무 절이나 붙잡지 않게)
         res = {**res, "hits": [h for h in res["hits"] if h["score"] >= DOC_FALLBACK_MIN_SCORE]}
     events = _ev(state, {"type": "DocSearch", "sections": res["total_sections"],
@@ -422,10 +469,15 @@ async def doc_locate_node(state: AgentState, deps: SupervisorDeps) -> dict:
                "질문과 맞는 문서 절을 찾지 못했습니다. 문서의 제목이나 단계 번호를 함께 적어 주세요.")
         return {"mode": "doc_not_found", "final": msg, "doc_hits": [], "tool_calls": 1,
                 "events": events + [{"type": "DocNotFound"}]}
-    # 질문이 함수 이름을 직접 적었으면(점수 6 이상) 그 함수와 문서 절의 연결도 확인한다
-    listing, _ = await with_retry(deps.mcp.call_tool, "list_functions", {"repo": state["repo"]})
-    named = [h for h in search(state["query"], listing["functions"], top_k=1) if h["score"] >= 6]
-    return {"doc_hits": res["hits"], "doc_symbol": named[0]["id"] if named else "", "tool_calls": 2,
+    # 전체 문서 요청은 문서 내용 요약이다. 문서 안의 예시 함수명을 질문한 코드로 오인하지 않는다.
+    named = []
+    if not all_requested:
+        mentioned_names = names_in_text(state["query"])
+        if mentioned_names:
+            listing, _ = await with_retry(deps.mcp.call_tool, "list_functions", {"repo": state["repo"]})
+            named = [h for h in search(state["query"], listing["functions"], top_k=1)
+                     if h["score"] >= 6 and h["qualname"] in mentioned_names]
+    return {"doc_hits": res["hits"], "doc_symbol": named[0]["id"] if named else "", "doc_all": all_requested, "tool_calls": 2,
             **({"mode": None, "route": "doc"} if from_trace else {}),
             "events": events + [{"type": "DocSection", "section": res["hits"][0]["title"],
                                  "file": res["hits"][0]["file"],
@@ -439,18 +491,26 @@ async def doc_check_node(state: AgentState, deps: SupervisorDeps) -> dict:
     args = {"repo": state["repo"], "section_id": sid}
     if state.get("doc_symbol"):
         args["symbol"] = state["doc_symbol"]
-    chk, _ = await with_retry(deps.mcp.call_tool, "check_doc_section", args)
+    if state.get("doc_all"):
+        chk = {"claims": [], "counts": {k: 0 for k in ("match", "indirect", "mismatch", "missing", "unknown")}}
+    else:
+        chk, _ = await with_retry(deps.mcp.call_tool, "check_doc_section", args)
     # 검색 근거와 실제 소스를 함께 전달한다. 문서의 호출 주장을 코드의 사실로 승격하지 않는다.
     additional = []
-    for hit in state["doc_hits"][1:3]:
+    for hit in state["doc_hits"][1:]:
         other, _ = await with_retry(deps.mcp.call_tool, "get_doc_section", {"repo":state["repo"],"section_id":hit["id"]})
         additional.append(other)
     sec["additional_sections"] = additional
-    listing, _ = await with_retry(deps.mcp.call_tool,"list_functions",{"repo":state["repo"]})
-    known = {f["qualname"]:f for f in listing["functions"]}
+    sec["document_collection"] = state.get("doc_all", False)
+    listing = {"functions": []}
+    if not state.get("doc_all"):
+        listing, _ = await with_retry(deps.mcp.call_tool,"list_functions",{"repo":state["repo"]})
+    # doc_symbol은 locate 단계에서 이미 고른 고유 ID다. 문서의 mentions는 이름이므로
+    # 유일하게 매핑되는 것만 ID로 바꿔 뒤의 get_source/get_chain에 전달한다.
     requested = [state.get("doc_symbol", "")]
-    for document in [sec] + additional:
-        requested.extend(n for n in document.get("mentions",[]) if n in known)
+    if state.get("doc_symbol"):
+        for document in [sec] + additional:
+            requested.extend(_unique_named_symbol_ids(listing["functions"], document.get("mentions", [])))
     evidence = []
     seen = set()
     for symbol in requested:
@@ -462,9 +522,10 @@ async def doc_check_node(state: AgentState, deps: SupervisorDeps) -> dict:
             chain, _ = await with_retry(deps.mcp.call_tool,"get_chain",{"repo":state["repo"],"symbol":symbol,"depth":1})
         except Exception:
             continue  # 확인 못 한 코드를 다른 함수로 대체하지 않는다.
-        evidence.append({"symbol":chain["qualname"],"file":source["file"],"start_line":source["start_line"],
+        evidence.append({"id":source["symbol"],"symbol":chain["qualname"],"file":source["file"],"start_line":source["start_line"],
                          "source":source["source"],"pairs":chain["pairs"],"unresolved":chain["unresolved"]})
     sec["code_evidence"] = evidence
+    chk["code_evidence_refs"] = [{"id": e["id"], "label": e["symbol"], "file": e["file"]} for e in evidence]
     return {"doc_section": sec, "doc_check": chk, "tool_calls": state.get("tool_calls",0)+3+len(additional)+2*len(evidence),
             "events": _ev(state, {"type":"DocCheck", **chk["counts"],
                                   "relation":(chk.get("relation") or {}).get("relation"),
@@ -480,7 +541,10 @@ async def doc_explain_node(state: AgentState, deps: SupervisorDeps) -> dict:
     except LLMUnavailable as e:   # 문서 대조 결과(결정적)는 그대로 두고 해석만 뺀다
         return {"explanation": "", "claims": [], "attempts": 1, "mode": "doc-no-llm", "llm_down": True,
                 "events": _ev(state, {"type": "LLMUnavailable", "stage": "doc_explain", "detail": str(e)[:120]})}
-    return {"explanation": out["explanation"], "claims": out["claims"], "attempts": 1,
+    # 전체 문서 요약은 호출 관계를 주장하는 작업이 아니다. 문서 속 예시 코드가 claims로
+    # 섞여 설명 전체가 버려지는 것을 막는다.
+    claims = [] if state.get("doc_all") else out["claims"]
+    return {"explanation": out["explanation"], "claims": claims, "attempts": 1,
             "cost_usd": _cost(state, usage),
             "events": _ev(state, {"type": "Explained", "attempt": 1, "backend": where,
                                   "claims": len(out["claims"])})}
@@ -489,15 +553,30 @@ async def doc_explain_node(state: AgentState, deps: SupervisorDeps) -> dict:
 @traceable(name="doc_verify_node")
 async def doc_verify_node(state: AgentState, deps: SupervisorDeps) -> dict:
     """설명이 '호출한다'고 말한 관계를 호출 체인과 대조한다. 오류가 하나라도 있으면 설명을 버린다(재시도 없음)."""
+    if state.get("doc_all"):
+        verdict = {"ok": True, "verified": 0, "hallucinated": 0, "wrong": 0,
+                   "unverifiable": 0, "empty": False, "errors": [], "unverifiable_claims": []}
+        return {"verdict": verdict,
+                "events": _ev(state, {"type": "Verification", "attempt": 1, "ok": True,
+                                      "verified": 0, "hallucinated": 0, "wrong": 0, "unverifiable": 0})}
     chain = {"pairs": [], "unresolved": [], "known_symbols": []}
     listing, _ = await with_retry(deps.mcp.call_tool, "list_functions", {"repo": state["repo"]})
     chain["known_symbols"] = [f["qualname"] for f in listing["functions"]]
+    unique_ids = _unique_named_symbol_ids(listing["functions"], chain["known_symbols"])
+    # claims는 모델이 사람이 읽는 qualname으로 낸다. 같은 이름이 여러 개면 호출 관계를
+    # 단정할 수 없으므로 검증 근거로 쓰지 않는다(임의의 첫 파일을 선택하지 않는다).
+    unique_id_by_name = {
+        function["qualname"]: function["id"]
+        for function in listing["functions"]
+        if function["id"] in unique_ids
+    }
     for caller in sorted({c.get("caller", "") for c in state.get("claims", [])}):
-        if caller not in chain["known_symbols"]:
+        symbol_id = unique_id_by_name.get(caller)
+        if not symbol_id:
             continue
         try:
             part, _ = await with_retry(deps.mcp.call_tool, "get_chain",
-                                       {"repo": state["repo"], "symbol": caller, "depth": 1})
+                                       {"repo": state["repo"], "symbol": symbol_id, "depth": 1})
         except Exception:
             continue
         chain["pairs"] += part["pairs"]
@@ -516,8 +595,22 @@ async def doc_verify_node(state: AgentState, deps: SupervisorDeps) -> dict:
 
 def _doc_text(state: AgentState) -> str:
     sec, chk = state["doc_section"], state["doc_check"]
+    if state.get("doc_all"):
+        parts = []
+        if state.get("explanation"):
+            parts.append("[전체 문서 요약 — AI 서술]\n" + state["explanation"])
+        sections = [sec] + sec.get("additional_sections", [])
+        for document in sections:
+            parts.append(f"[문서 원문 — {document['file']} · {document['title']} · {document['line']}행]\n" +
+                         "\n".join(f"> {line}" for line in document["text"].splitlines() if line.strip()))
+        if not state.get("explanation"):
+            parts.insert(0, "[요약을 만들지 못했습니다 — 모델 서버가 응답하지 않아 전체 원문을 표시합니다]")
+        return "\n\n".join(parts)
     excerpt = "\n".join(f"> {l}" for l in sec["text"].splitlines() if l.strip())
-    parts = [f"[문서 근거 — {sec['file']} · {sec['title']} (문서 내용이며 검증 대상 아님)]\n{excerpt}"]
+    parts = []
+    if state.get("doc_all") and state.get("explanation"):
+        parts.append("[전체 문서 요약 — AI 서술]\n" + state["explanation"])
+    parts.append(f"[문서 근거 — {sec['file']} · {sec['title']} (문서 내용이며 검증 대상 아님)]\n{excerpt}")
     rows = [f"- {_VERDICT_TEXT[c['verdict']]}: {c['doc']} — {c['detail']}" for c in chk["claims"]]
     parts.append("[코드 대조 — 문서의 호출 관계를 정적 분석과 대조]\n" +
                  ("\n".join(rows) if rows else "- 이 절에는 코드 이름으로 적힌 호출 관계가 없습니다"))
@@ -532,9 +625,9 @@ def _doc_text(state: AgentState) -> str:
             f"- {e['symbol']} ({e['file']}:{e['start_line']}): " +
             (", ".join(f"{a} → {b}" for a,b in e["pairs"]) or "확정된 직접 호출 없음")
             for e in sec["code_evidence"]))
-    if state.get("explanation"):
+    if state.get("explanation") and not state.get("doc_all"):
         parts.append("[해석 — 설명 모델의 판단, 대응 여부는 추정이며 검증되지 않음]\n" + state["explanation"])
-    else:
+    elif not state.get("explanation"):
         parts.append("[해석 없음 — 모델 서버가 응답하지 않아 문서와 대조 결과만 제공합니다]" if state.get("llm_down") else
                      "[해석 없음 — 설명 검증을 통과하지 못해 문서와 대조 결과만 제공합니다]")
     return "\n\n".join(parts)

@@ -6,7 +6,7 @@ def _usage(): return {"model":"test-mock","tokens":0,"usd":0.0}
 class MockFast:
     name="test-fast"
     def __init__(self,*_args,**_kwargs): pass
-    def route(self, q):
+    def route(self, q, document_candidates=None):
         from backend.app.agents.routing import route_by_rule
         return route_by_rule(q)
     def select_expansions(self,q,c): return (c,_usage())

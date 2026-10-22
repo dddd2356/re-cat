@@ -3,7 +3,10 @@ import re
 
 
 def route_by_rule(query: str) -> tuple[dict, dict]:
-    if re.search(r"문서|명세|기획서|스펙|README|readme|\d+\s*단계", query):
+    # 문서의 대표 제목도 문서 질문 신호다. 예: "트러블슈팅했던 부분 설명해줘"는
+    # '설명'이라는 단어만 보면 코드 추적으로 오해하기 쉽지만, 등록된 TROUBLESHOOTING.md를
+    # 먼저 검색해야 한다.
+    if re.search(r"문서|명세|기획서|스펙|README|readme|트러블\s*슈팅|troubleshooting|\d+\s*단계", query):
         result = {"route": "doc"}
     else:
         trace = bool(re.search(

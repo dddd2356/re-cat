@@ -16,4 +16,6 @@ def test_rule_router_matches_existing_question_forms():
     from backend.app.agents.routing import route_by_rule
     assert route_by_rule("OrderService.create 호출 흐름")[0] == {"route": "trace"}
     assert route_by_rule("기획서의 3단계 설명")[0] == {"route": "doc"}
+    assert route_by_rule("우리가 트러블슈팅했던 부분에 대해서 설명해줘")[0] == {"route": "doc"}
+    assert route_by_rule("우리가 겪었던 트러블 슈팅에 대해서 설명해줘")[0] == {"route": "doc"}
     assert route_by_rule("안녕")[0] == {"route": "chat"}

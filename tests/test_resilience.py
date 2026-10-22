@@ -136,7 +136,8 @@ def _child_pids():
         )
         out = subprocess.run(["powershell", "-NoProfile", "-Command", command], capture_output=True, text=True).stdout
         return [int(x) for x in out.split()]
-    out = subprocess.run(["pgrep", "-P", str(os.getpid()), "-f", "mcp_server.py"], capture_output=True, text=True).stdout
+    # MCP 서버가 루트 mcp_server.py였던 구버전과 backend/app/mcp/server.py인 현재 버전을 모두 찾는다.
+    out = subprocess.run(["pgrep", "-P", str(os.getpid()), "-f", r"mcp(_|/)server\.py"], capture_output=True, text=True).stdout
     return [int(x) for x in out.split()]
 
 
@@ -238,18 +239,33 @@ def test_slow_llm_call_does_not_block_event_loop(monkeypatch):
     assert asyncio.run(run()) < 0.3                     # 막혔다면 최대 간격이 ~1초
 
 
-# ---- ⑩ 작은 분류 모델이 코드 질문을 잡담으로 분류해도 규칙이 먼저 잡는다 ----
-def test_rules_route_code_questions_even_if_model_says_chat(client, monkeypatch):
+# ---- ⑩ 문서 후보를 LLM에 주되, 명확한 코드 질문의 잡담 오판은 안전망으로 막는다 ----
+def test_route_uses_model_but_keeps_code_question_fallback(client, monkeypatch):
     deps = client.app.state.deps
     calls = []
-    def always_chat(q):
+    def always_chat(q, document_candidates=None):
         calls.append(q)
         return {"route": "chat"}, {"usd": 0.0}
     monkeypatch.setattr(deps.fast_llm, "route", always_chat)
     for q in ["주문 생성은 어떻게 동작해?", "OrderService.create 호출 흐름", "run_hook은 무엇을 호출해?"]:
         d = client.post("/chat", json={"message": q, "repo": "sample_py", "thread_id": "rt" + q}).json()
         rd = next(e for e in d["events"] if e["type"] == "RouteDecided")
-        assert rd["route"] == "trace" and rd["by"] == "rule" and d["metadata"]["mode"] in ("agent", "no-llm-fallback")
-    assert calls == []                                       # 규칙이 정한 질문엔 모델을 부르지도 않는다
+        assert rd["route"] == "trace" and rd["by"] == "rule-fallback" and d["metadata"]["mode"] in ("agent", "no-llm-fallback")
+    assert calls == ["주문 생성은 어떻게 동작해?", "OrderService.create 호출 흐름", "run_hook은 무엇을 호출해?"]
     d = client.post("/chat", json={"message": "안녕", "repo": "sample_py", "thread_id": "rt-hi"}).json()
-    assert next(e for e in d["events"] if e["type"] == "RouteDecided")["by"] == "model" and calls == ["안녕"]
+    assert next(e for e in d["events"] if e["type"] == "RouteDecided")["by"] == "model" and calls[-1] == "안녕"
+
+
+# ---- 규칙이 trace로 확신한 질문을, 모델이 doc으로 끌어내려도 안 된다 (예: "_doc_files 호출 흐름") ----
+def test_route_model_cannot_downgrade_confident_trace_rule_to_doc(client, monkeypatch):
+    deps = client.app.state.deps
+    calls = []
+    def always_doc(q, document_candidates=None):
+        calls.append(q)
+        return {"route": "doc"}, {"usd": 0.0}
+    monkeypatch.setattr(deps.fast_llm, "route", always_doc)
+    for q in ["OrderService.create 호출 흐름", "run_hook은 무엇을 호출해?"]:
+        d = client.post("/chat", json={"message": q, "repo": "sample_py", "thread_id": "rtdoc" + q}).json()
+        rd = next(e for e in d["events"] if e["type"] == "RouteDecided")
+        assert rd["route"] == "trace" and rd["by"] == "rule-fallback"
+    assert calls == ["OrderService.create 호출 흐름", "run_hook은 무엇을 호출해?"]

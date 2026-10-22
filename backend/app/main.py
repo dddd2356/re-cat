@@ -22,14 +22,20 @@ from backend.app.observability.langsmith_feedback import FeedbackSender, has_key
 from backend.app.security import registry
 from backend.app.security.policy import load_policy
 
+def _apply_tracing_environment(policy) -> None:
+    """정책보다 기존 배포 환경변수가 우선하지 않도록 추적 환경을 닫힌 쪽으로 맞춘다."""
+    # 입출력 숨김은 LangSmith 클라이언트가 만들어지기 전에 설정한다.
+    # setdefault를 쓰면 배포 환경에 남아 있던 false 값이 정책을 우회할 수 있다.
+    if policy.hide_inputs_outputs:
+        os.environ["LANGSMITH_HIDE_INPUTS"] = "true"
+        os.environ["LANGSMITH_HIDE_OUTPUTS"] = "true"
+    if not policy.langsmith_enabled:
+        os.environ["LANGCHAIN_TRACING_V2"] = "false"
+        os.environ["LANGSMITH_TRACING"] = "false"
+
+
 _POLICY = load_policy()   # policy.yaml + 관리자가 등록한 저장소(더하기만)
-# 입출력 숨김은 LangSmith 클라이언트가 만들어지기 전에 환경변수로 걸어 둔다.
-if _POLICY.hide_inputs_outputs:
-    os.environ.setdefault("LANGSMITH_HIDE_INPUTS", "true")
-    os.environ.setdefault("LANGSMITH_HIDE_OUTPUTS", "true")
-if not _POLICY.langsmith_enabled:
-    os.environ["LANGCHAIN_TRACING_V2"] = "false"
-    os.environ["LANGSMITH_TRACING"] = "false"
+_apply_tracing_environment(_POLICY)
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -282,7 +288,9 @@ async def file_view(repo: str, symbol: str = "", path: str = ""):
 
 def _structure_out(s: dict) -> dict:
     return {"entry": s["qualname"], "pairs": s["pairs"], "unresolved": s["unresolved"],
-            "scope": s.get("scope", "function"), "entries": s.get("entries") or [s["qualname"]]}
+            "scope": s.get("scope", "function"), "entries": s.get("entries") or [s["qualname"]],
+            "entry_ids": s.get("entry_ids", []), "pair_ids": s.get("pair_ids", []),
+            "symbol_refs": s.get("symbol_refs", [])}
 
 
 def _suggestions(structure: dict | None, doc_check: dict | None, clarify: list[str] | None = None) -> list[dict]:
@@ -321,27 +329,22 @@ def _suggestions(structure: dict | None, doc_check: dict | None, clarify: list[s
     return uniq[:4]
 
 
-def _answer_symbols(structure: dict | None, doc_check: dict | None) -> list[str]:
-    """답변과 관련된 함수 목록(코드 보기 버튼용). 코드에 실제로 있는 이름만 넣는다."""
-    out: list[str] = []
+def _answer_symbols(structure: dict | None, doc_check: dict | None) -> list[dict]:
+    """코드 보기 버튼용 고유 ID와 표시 이름. 이름이 중복돼도 다른 파일을 열지 않는다."""
+    out: list[dict] = []
     if structure:
-        out += structure.get("entries") or [structure["qualname"]]   # 클래스 범위면 클래스 이름 대신 메서드들
-        for a, b in structure["pairs"]:
-            out += [a, b]
+        refs = {ref["id"]: ref for ref in structure.get("symbol_refs", [])}
+        ids = list(structure.get("entry_ids", []))
+        for a, b in structure.get("pair_ids", []):
+            ids += [a, b]
+        for sid in ids:
+            if sid in refs and refs[sid] not in out:
+                out.append(refs[sid])
     if doc_check:
-        rel = doc_check.get("relation")
-        if rel:
-            out.append(rel["symbol"])
-        for c in doc_check.get("claims", []):
-            if c["verdict"] != "missing":
-                out += [c["caller"], c["callee"]]
-            for q in c.get("path") or []:
-                out.append(q)
-    seen: list[str] = []
-    for q in out:
-        if q not in seen:
-            seen.append(q)
-    return seen[:30]
+        for ref in doc_check.get("code_evidence_refs", []):
+            if ref not in out:
+                out.append(ref)
+    return out[:30]
 
 
 @app.get("/callers/{repo}", dependencies=[Depends(require_key), Depends(_repo_read)])
@@ -455,11 +458,11 @@ async def chat(req: ChatRequest):
            "metadata": _metadata(result, run_id)}
     if result.get("structure"):
         out["structure"] = _structure_out(result["structure"])
-    if result.get("verdict"):
+    if result.get("verdict") and not result.get("doc_all"):
         out["verification"] = result["verdict"]
-    out["symbols"] = _answer_symbols(result.get("structure"), result.get("doc_check"))
+    out["symbols"] = [] if result.get("doc_all") else _answer_symbols(result.get("structure"), result.get("doc_check"))
     clarify = ([c["qualname"] for c in result["candidates"]] if result.get("mode") == "clarify" else None)
-    out["suggestions"] = _suggestions(result.get("structure"), result.get("doc_check"), clarify)
+    out["suggestions"] = [] if result.get("doc_all") else _suggestions(result.get("structure"), result.get("doc_check"), clarify)
     return out
 
 
@@ -503,7 +506,7 @@ async def chat_stream(request: Request, message: str, thread_id: str = "default"
                                 seen = len(delta["events"])
                             final = delta.get("final") or final
                             verdict = delta.get("verdict") or verdict
-                            for k in ("mode", "attempts", "decision", "sensitive", "tool_calls", "candidates"):
+                            for k in ("mode", "attempts", "decision", "sensitive", "tool_calls", "candidates", "doc_all"):
                                 if delta.get(k) is not None:
                                     info[k] = delta[k]
                             structure = delta.get("structure") or structure
@@ -516,7 +519,8 @@ async def chat_stream(request: Request, message: str, thread_id: str = "default"
                 yield "data: [DONE]\n\n"
                 return
             clarify = ([c["qualname"] for c in info["candidates"]] if info.get("mode") == "clarify" and info.get("candidates") else None)
-            yield f"data: {json.dumps({'type': 'FinalAnswer', 'reply': final, 'mode': info.get('mode'), 'verification': verdict, 'structure': _structure_out(structure) if structure else None, 'symbols': _answer_symbols(structure, doc_check), 'suggestions': _suggestions(structure, doc_check, clarify)}, ensure_ascii=False)}\n\n"
+            all_doc = bool(info.get("doc_all"))
+            yield f"data: {json.dumps({'type': 'FinalAnswer', 'reply': final, 'mode': info.get('mode'), 'verification': None if all_doc else verdict, 'structure': _structure_out(structure) if structure else None, 'symbols': [] if all_doc else _answer_symbols(structure, doc_check), 'suggestions': [] if all_doc else _suggestions(structure, doc_check, clarify)}, ensure_ascii=False)}\n\n"
         deps.session_store.append_turn(thread_id, message, final, repo)
         v = verdict or {}
         fb = _send_feedback(run_id if deps.version == "v2" else None, _traced(repo, sensitive), verdict,
@@ -666,6 +670,30 @@ def _flag(v: str, default: bool) -> bool:
     return v in ("true", "1", "on", "yes")
 
 
+def _upload_rejection_message(exc: Exception) -> str:
+    """관리자에게는 조치 가능한 거부 범주만 알리고, zip 내부 경로·파일명은 노출하지 않는다."""
+    detail = str(exc)
+    if "zip이 너무 큽니다" in detail:
+        return "압축 파일 크기가 업로드 한도를 넘었습니다."
+    if "압축을 푼 크기" in detail:
+        return "압축 해제 후 전체 크기가 업로드 한도를 넘었습니다."
+    if "파일이 너무 많" in detail:
+        return "압축 안의 파일 수가 업로드 한도를 넘었습니다."
+    if "파일이 너무 큽" in detail:
+        return "압축 안에 파일별 크기 한도를 넘는 항목이 있습니다."
+    if "압축률" in detail:
+        return "압축률이 비정상적으로 높아 압축 폭탄 가능성으로 거부됐습니다."
+    if "링크·특수 파일" in detail:
+        return "심볼릭 링크 또는 특수 파일이 포함되어 업로드할 수 없습니다."
+    if "허용되지 않는 경로" in detail:
+        return "상대 경로 이탈 또는 절대 경로가 포함되어 업로드할 수 없습니다."
+    if "zip 파일이 아닙니다" in detail:
+        return "선택한 파일이 올바른 zip 형식이 아닙니다."
+    if "올릴 파일이 없습니다" in detail:
+        return "분석할 수 있는 파일이 압축 안에 없습니다."
+    return "압축 파일 보안 검사를 통과하지 못했습니다."
+
+
 async def _install_zip(tmp_path: Path, repo: str, sensitive: bool, replace: bool, kind: str) -> dict:
     """zip(또는 폴더를 묶은 zip)을 저장소로 설치하고 등록·재분석한다."""
     from backend.app.security.path_guard import REPOS_ROOT
@@ -681,7 +709,7 @@ async def _install_zip(tmp_path: Path, repo: str, sensitive: bool, replace: bool
         stats = await asyncio.to_thread(extract_repo, tmp_path, repo, REPOS_ROOT, replace=replace, keep_backup=True)
     except UploadRejected as e:
         audit.record("repo_upload_rejected", repo=repo, kind=kind, reason=str(e)[:120])
-        raise AppError(ErrorCode.UPLOAD_REJECTED, 400, "업로드 파일을 처리할 수 없습니다.") from None
+        raise AppError(ErrorCode.UPLOAD_REJECTED, 400, _upload_rejection_message(e)) from None
     import shutil
     try:
         if replace:
@@ -693,10 +721,25 @@ async def _install_zip(tmp_path: Path, repo: str, sensitive: bool, replace: bool
         if stats.get("backup"):
             Path(stats["backup"]).rename(REPOS_ROOT / repo)
         raise
+    if replace:
+        # 새 파일을 확정하기 전에 MCP가 실제로 새 저장소를 다시 읽을 수 있는지 확인한다.
+        # 실패하면 extract_repo가 보관한 이전 폴더로 되돌려 파일·등록부·캐시가 서로 다른
+        # revision을 보지 않게 한다.
+        try:
+            await app.state.deps.mcp.call_tool("reanalyze", {"repo": repo})
+        except Exception:
+            backup = Path(stats["backup"]) if stats.get("backup") else None
+            if backup and backup.exists():
+                shutil.rmtree(REPOS_ROOT / repo, ignore_errors=True)
+                backup.rename(REPOS_ROOT / repo)
+                registry.bump(repo)     # 새 파일/기존 파일 양쪽 캐시를 무효화한다.
+                try:
+                    await app.state.deps.mcp.call_tool("reanalyze", {"repo": repo})
+                except Exception:
+                    pass                # 원래 예외를 보존한다. 다음 읽기에서 MCP가 다시 분석한다.
+            raise
     if stats.get("backup"):
         shutil.rmtree(stats["backup"])
-    if replace:
-        await app.state.deps.mcp.call_tool("reanalyze", {"repo": repo})
     audit.record("repo_upload", repo=repo, kind=kind, files=stats["files"], bytes=stats["bytes"],
                  sensitive=repo in _POLICY.sensitive_repos, replace=replace)
     return {**(await _repo_row(repo)), "uploaded_files": stats["files"]}
