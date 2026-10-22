@@ -26,7 +26,8 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# tools/eval/run_eval.py -> tools/eval -> tools -> project root
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from backend.app.analyzers.loader import analyze_repo          # noqa: E402

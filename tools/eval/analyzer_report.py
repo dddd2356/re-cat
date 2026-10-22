@@ -17,7 +17,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# tools/eval/analyzer_report.py -> tools/eval -> tools -> project root
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from backend.app.analyzers.base import BUILTIN_METHOD_NAMES   # noqa: E402

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from backend.app.analyzers.loader import analyze_repo
-from tools.eval.run_eval import ground_truth, score, summarize
+from tools.eval.run_eval import ROOT as EVAL_ROOT, ground_truth, repo_code, score, summarize
 
 ROOT = Path(__file__).resolve().parent.parent / "var" / "data" / "repos"
 
@@ -21,3 +21,9 @@ def test_summarize_error_rate_ignores_skipped_arm():
             {"C": None}]
     s = summarize(rows, "C")
     assert s["n"] == 1 and s["error_rate"] == 0.1
+
+
+def test_eval_uses_project_root_for_sample_repository():
+    """CLI 평가도 pytest와 같은 sample repository를 읽어야 한다."""
+    assert EVAL_ROOT == Path(__file__).resolve().parent.parent
+    assert "class OrderService" in repo_code("sample_py")
